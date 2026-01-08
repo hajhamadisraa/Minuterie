@@ -2,6 +2,7 @@
 #include "WiFiModule.h"
 #include "NTPUtils.h"
 #include "TimeUtils.h"
+#include "LocationService.h"
 #include "SunCalculator.h"
 #include "LightingService.h"
 #include "Config.h"
@@ -23,31 +24,43 @@ void setup() {
     // Init LED
     LightingService::init(LED_PIN);
 
-    // Connexion Wi-Fi
+    // ================== Wi-Fi ==================
     wifi.connect();
 
-    // Init NTP si connecté
-    if(wifi.isConnected()) {
+    // ================== NTP ==================
+    if (wifi.isConnected()) {
         NTPUtils::init(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC);
     }
 
-    // Récupération automatique latitude/longitude pour SunCalculator
-    SunCalculator::updateLocation();
+    // ================== Localisation automatique ==================
+    if (wifi.isConnected() && LocationService::update()) {
+        double lat = LocationService::getLatitude();
+        double lon = LocationService::getLongitude();
 
-    // Init TimeUtils pour simulation si besoin
+        Serial.print("Latitude : ");
+        Serial.println(lat, 6);
+        Serial.print("Longitude: ");
+        Serial.println(lon, 6);
+
+        SunCalculator::init(lat, lon);
+    } else {
+        Serial.println("⚠️ Position non disponible, SunCalculator non initialisé");
+    }
+
+    // ================== TimeUtils (fallback / test) ==================
     TimeUtils::init();
 }
 
 void loop() {
     // ================== Heure actuelle ==================
     TimeHM current;
-    if(wifi.isConnected()) {
+    if (wifi.isConnected()) {
         current = NTPUtils::now();
     } else {
         current = TimeUtils::now();
     }
 
-    // ================== Lever / coucher ==================
+    // ================== Lever / coucher du soleil ==================
     TimeHM sunrise = SunCalculator::getSunrise();
     TimeHM sunset  = SunCalculator::getSunset();
 
@@ -59,11 +72,12 @@ void loop() {
     Serial.print("Sunset  : ");
     Serial.println(TimeUtils::toString(sunset));
 
-    // ================== Logique LED selon mode ==================
-    switch(LIGHT_MODE) {
+    // ================== Logique LED ==================
+    switch (LIGHT_MODE) {
+
         case BEFORE_SUNSET:
             // LED éteinte avant le coucher, allumée après
-            if(TimeUtils::isBefore(current, sunset))
+            if (TimeUtils::isBefore(current, sunset))
                 LightingService::turnOff();
             else
                 LightingService::turnOn();
@@ -71,7 +85,7 @@ void loop() {
 
         case AFTER_SUNSET:
             // LED allumée après le coucher, éteinte avant
-            if(TimeUtils::isAfter(current, sunset))
+            if (TimeUtils::isAfter(current, sunset))
                 LightingService::turnOn();
             else
                 LightingService::turnOff();
@@ -79,7 +93,7 @@ void loop() {
 
         case BEFORE_SUNRISE:
             // LED allumée avant le lever, éteinte après
-            if(TimeUtils::isBefore(current, sunrise))
+            if (TimeUtils::isBefore(current, sunrise))
                 LightingService::turnOn();
             else
                 LightingService::turnOff();
@@ -87,7 +101,7 @@ void loop() {
 
         case AFTER_SUNRISE:
             // LED éteinte après le lever, allumée avant
-            if(TimeUtils::isAfter(current, sunrise))
+            if (TimeUtils::isAfter(current, sunrise))
                 LightingService::turnOff();
             else
                 LightingService::turnOn();
@@ -95,14 +109,14 @@ void loop() {
 
         case MANUAL:
             // LED allumée uniquement dans la plage définie
-            if(TimeUtils::isInRange(manualStart, manualEnd))
+            if (TimeUtils::isInRange(manualStart, manualEnd))
                 LightingService::turnOn();
             else
                 LightingService::turnOff();
             break;
     }
 
-    // ================== Affichage état LED ==================
+    // ================== État LED ==================
     Serial.print("État LED : ");
     Serial.println(LightingService::getState() ? "ON" : "OFF");
     Serial.println("----------------------");

@@ -1,22 +1,19 @@
 #ifndef SUN_CALCULATOR_H
 #define SUN_CALCULATOR_H
 
-#include <Arduino.h>
 #include "TimeUtils.h"
 
 class SunCalculator {
-private:
-    static float latitude;
-    static float longitude;
-    static TimeHM sunrise;
-    static TimeHM sunset;
-
-    static void calculateSunriseSunset(int year, int month, int day);
-
 public:
-    static void updateLocation();        // Récupère latitude/longitude via IP
+    static void init(double lat, double lon);
     static TimeHM getSunrise();
     static TimeHM getSunset();
+
+private:
+    static double latitude;
+    static double longitude;
+
+    static TimeHM compute(bool sunrise);
 };
 
 #endif
