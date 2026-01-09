@@ -1,0 +1,190 @@
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+export default function BellSettings() {
+  const [mode, setMode] = useState('Normal' as 'Normal' | 'Special');
+
+  const bellTimes = [
+    { time: '08:00 AM', label: 'Morning Ring' },
+    { time: '10:30 AM', label: 'Break Time' },
+    { time: '12:00 PM', label: 'Lunch Bell' },
+    { time: '03:30 PM', label: 'Dismissal' },
+  ];
+
+  return (
+    <View style={styles.container}>
+      {/* Top App Bar */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => {}}>
+          <Text style={styles.backIcon}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Bell Settings</Text>
+        <View style={{ width: 24 }} /> {/* Placeholder */}
+      </View>
+
+      {/* Mode Selector */}
+      <View style={styles.modeSelector}>
+        <TouchableOpacity
+          style={[styles.modeButton, mode === 'Normal' && styles.modeButtonActive]}
+          onPress={() => setMode('Normal')}
+        >
+          <Text style={mode === 'Normal' ? styles.modeTextActive : styles.modeText}>
+            Normal Mode
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeButton, mode === 'Special' && styles.modeButtonActive]}
+          onPress={() => setMode('Special')}
+        >
+          <Text style={mode === 'Special' ? styles.modeTextActive : styles.modeText}>
+            Special Mode
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Section Header */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Scheduled Times</Text>
+        <Text style={styles.sectionSubtitle}>ESP32 Linked</Text>
+      </View>
+
+      {/* Scrollable List */}
+      <ScrollView style={styles.scrollList} contentContainerStyle={{ paddingBottom: 120 }}>
+        {bellTimes.map((bell) => (
+          <View key={bell.time} style={styles.listItem}>
+            <View style={styles.listItemLeft}>
+              <View style={styles.iconWrapper}>
+                <Text style={styles.icon}>⏰</Text> {/* ✅ Emoji dans Text */}
+              </View>
+              <View>
+                <Text style={styles.listItemTime}>{bell.time}</Text>
+                <Text style={styles.listItemLabel}>{bell.label}</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => {}} style={styles.deleteButton}>
+              <Text style={styles.deleteIcon}>🗑️</Text> {/* ✅ Emoji dans Text */}
+            </TouchableOpacity>
+          </View>
+        ))}
+
+        {/* Add Time Button */}
+        <TouchableOpacity onPress={() => {}} style={styles.addButton}>
+          <Text style={styles.addIcon}>➕</Text> {/* ✅ Emoji dans Text */}
+          <Text style={styles.addText}>Add Time</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Fixed Footer */}
+      <View style={styles.footer}>
+        <TouchableOpacity onPress={() => {}} style={styles.saveButton}>
+          <Text style={styles.saveText}>Save Configuration</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  backIcon: { fontSize: 20, color: '#111' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', flex: 1 },
+
+  // Mode selector
+  modeSelector: {
+    flexDirection: 'row',
+    margin: 16,
+    borderRadius: 12,
+    backgroundColor: '#f0f2f5',
+    overflow: 'hidden',
+  },
+  modeButton: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  modeButtonActive: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modeText: { color: '#60758a', fontWeight: '600' },
+  modeTextActive: { color: '#111', fontWeight: '600' },
+
+  // Section Header
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: '#111' },
+  sectionSubtitle: {
+    fontSize: 10,
+    color: '#0d7fff',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+
+  // List
+  scrollList: { flex: 1, paddingBottom: 120 },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  listItemLeft: { flexDirection: 'row', alignItems: 'center', marginRight: 12 },
+  iconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(13,127,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  icon: { fontSize: 20, color: '#0d7fff' },
+  listItemTime: { fontSize: 14, fontWeight: '600', color: '#111' },
+  listItemLabel: { fontSize: 10, color: '#60758a', textTransform: 'uppercase' },
+  deleteButton: { padding: 8 },
+  deleteIcon: { fontSize: 18, color: '#ff3b30' },
+
+  // Add Button
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 16,
+    paddingVertical: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(13,127,255,0.3)',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+  },
+  addIcon: { fontSize: 16, marginRight: 8, color: '#0d7fff' },
+  addText: { fontSize: 14, fontWeight: 'bold', color: '#0d7fff' },
+
+  // Footer
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  saveButton: { backgroundColor: '#0d7fff', paddingVertical: 16, borderRadius: 12, alignItems: 'center' },
+  saveText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+});

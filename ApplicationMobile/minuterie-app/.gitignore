@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+
+# Environment variables
+.env
+
+# Build outputs
+web-build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Metro Bundler
+.metro-health-check*
+
+# Debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# Optional: ignore example apps
+app-example
