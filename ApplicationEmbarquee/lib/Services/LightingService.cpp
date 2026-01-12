@@ -1,20 +1,25 @@
 #include "LightingService.h"
-int LightingService::pin = 2;
+
+/* Définition des variables statiques */
+int LightingService::pin = -1;
 bool LightingService::ledState = false;
 
-void LightingService::init(int ledPin){
+void LightingService::init(int ledPin) {
     pin = ledPin;
     pinMode(pin, OUTPUT);
-    ledState = false;
-    digitalWrite(pin, LOW);
+    turnOff();
 }
 
-void LightingService::turnOn(){
-    ledState = true;
+void LightingService::turnOn() {
     digitalWrite(pin, HIGH);
+    ledState = true;
 }
 
-void LightingService::turnOff(){
-    ledState = false;
+void LightingService::turnOff() {
     digitalWrite(pin, LOW);
+    ledState = false;
+}
+
+bool LightingService::getState() {
+    return ledState;
 }

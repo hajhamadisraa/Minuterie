@@ -1,28 +1,55 @@
 #include <Arduino.h>
+
 #include "WiFiModule.h"
 #include "NTPUtils.h"
 #include "TimeUtils.h"
 #include "LocationService.h"
 #include "SunCalculator.h"
+
 #include "LightingService.h"
+#include "LightingScheduler.h"
+
+#include "IrrigationService.h"
+#include "IrrigationScheduler.h"
+
 #include "Config.h"
-#include "LightingModes.h"
+#include "OperationMode.h"
 
 // ================== INIT ==================
 WiFiModule wifi(WIFI_SSID, WIFI_PASSWORD);
 
-// Temps manuel pour mode MANUAL
-TimeHM manualStart = {MANUAL_START_HOUR, MANUAL_START_MINUTE};
-TimeHM manualEnd   = {MANUAL_END_HOUR,   MANUAL_END_MINUTE};
+// ----------------- Modes indépendants -----------------
+// Mode à tester pour l'éclairage
+OperationMode lightingMode   = OperationMode::MANUAL;
+
+// Mode à tester pour l'irrigation
+OperationMode irrigationMode = OperationMode::MANUAL;
+
+// ----------------- Schedules manuels -----------------
+ManualSchedule manualLighting = {
+    .start = {MANUAL_START_HOUR, MANUAL_START_MINUTE},
+    .end   = {MANUAL_END_HOUR,   MANUAL_END_MINUTE}
+};
+
+ManualIrrigationSchedule manualIrrigation = {
+    .start = {12, 37},
+    .end   = {13, 0}
+};
+
+// Offset irrigation pour BEFORE/AFTER SUNRISE/SUNSET
+int irrigationOffsetMinutes = 30;
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
-    Serial.println("=== TEST MINUTERIE ÉCLAIRAGE ===");
+    Serial.println("=== TEST ÉCLAIRAGE ET IRRIGATION (SCHEDULER) ===");
 
-    // Init LED
+    // ================== LED ==================
     LightingService::init(LED_PIN);
+
+    // ================== Irrigation ==================
+    IrrigationService::init(IRRIGATION_PIN);
 
     // ================== Wi-Fi ==================
     wifi.connect();
@@ -32,7 +59,7 @@ void setup() {
         NTPUtils::init(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC);
     }
 
-    // ================== Localisation automatique ==================
+    // ================== Localisation auto ==================
     if (wifi.isConnected() && LocationService::update()) {
         double lat = LocationService::getLatitude();
         double lon = LocationService::getLongitude();
@@ -44,82 +71,86 @@ void setup() {
 
         SunCalculator::init(lat, lon);
     } else {
-        Serial.println("⚠️ Position non disponible, SunCalculator non initialisé");
+        Serial.println("⚠️ Localisation non disponible");
     }
 
-    // ================== TimeUtils (fallback / test) ==================
+    // ================== Fallback temps ==================
     TimeUtils::init();
 }
 
 void loop() {
+
     // ================== Heure actuelle ==================
-    TimeHM current;
+    TimeHM now;
     if (wifi.isConnected()) {
-        current = NTPUtils::now();
+        now = NTPUtils::now();
     } else {
-        current = TimeUtils::now();
+        now = TimeUtils::now();
     }
 
-    // ================== Lever / coucher du soleil ==================
-    TimeHM sunrise = SunCalculator::getSunrise();
-    TimeHM sunset  = SunCalculator::getSunset();
+    // ================== Sunrise / Sunset ==================
+    SunTimes sun = {
+        .sunrise = SunCalculator::getSunrise(),
+        .sunset  = SunCalculator::getSunset()
+    };
 
-    // ================== Logging ==================
-    Serial.print("Heure actuelle : ");
-    Serial.println(TimeUtils::toString(current));
-    Serial.print("Sunrise : ");
-    Serial.println(TimeUtils::toString(sunrise));
-    Serial.print("Sunset  : ");
-    Serial.println(TimeUtils::toString(sunset));
+    // ================== Scheduler Lighting ==================
+    bool lightingActive = LightingScheduler::shouldBeActive(
+        lightingMode,
+        now,
+        sun,
+        (lightingMode == OperationMode::MANUAL) ? &manualLighting : nullptr
+    );
 
-    // ================== Logique LED ==================
-    switch (LIGHT_MODE) {
+    if (lightingActive) LightingService::turnOn();
+    else LightingService::turnOff();
 
-        case BEFORE_SUNSET:
-            // LED éteinte avant le coucher, allumée après
-            if (TimeUtils::isBefore(current, sunset))
-                LightingService::turnOff();
-            else
-                LightingService::turnOn();
-            break;
+    // ================== Scheduler Irrigation ==================
+    bool irrigationActive = IrrigationScheduler::shouldBeActive(
+        irrigationMode,
+        now,
+        sun,
+        irrigationOffsetMinutes,
+        (irrigationMode == OperationMode::MANUAL) ? &manualIrrigation : nullptr
+    );
 
-        case AFTER_SUNSET:
-            // LED allumée après le coucher, éteinte avant
-            if (TimeUtils::isAfter(current, sunset))
-                LightingService::turnOn();
-            else
-                LightingService::turnOff();
-            break;
+    if (irrigationActive) IrrigationService::start();
+    else IrrigationService::stop();
 
-        case BEFORE_SUNRISE:
-            // LED allumée avant le lever, éteinte après
-            if (TimeUtils::isBefore(current, sunrise))
-                LightingService::turnOn();
-            else
-                LightingService::turnOff();
-            break;
-
-        case AFTER_SUNRISE:
-            // LED éteinte après le lever, allumée avant
-            if (TimeUtils::isAfter(current, sunrise))
-                LightingService::turnOff();
-            else
-                LightingService::turnOn();
-            break;
-
-        case MANUAL:
-            // LED allumée uniquement dans la plage définie
-            if (TimeUtils::isInRange(manualStart, manualEnd))
-                LightingService::turnOn();
-            else
-                LightingService::turnOff();
-            break;
-    }
-
-    // ================== État LED ==================
-    Serial.print("État LED : ");
-    Serial.println(LightingService::getState() ? "ON" : "OFF");
+    // ================== LOG ==================
     Serial.println("----------------------");
+    Serial.print("Heure actuelle : ");
+    Serial.println(TimeUtils::toString(now));
+
+    Serial.print("Sunrise : ");
+    Serial.println(TimeUtils::toString(sun.sunrise));
+
+    Serial.print("Sunset  : ");
+    Serial.println(TimeUtils::toString(sun.sunset));
+
+    Serial.print("Mode Lighting   : ");
+    switch (lightingMode) {
+        case OperationMode::BEFORE_SUNSET:  Serial.println("BEFORE_SUNSET"); break;
+        case OperationMode::AFTER_SUNSET:   Serial.println("AFTER_SUNSET"); break;
+        case OperationMode::BEFORE_SUNRISE: Serial.println("BEFORE_SUNRISE"); break;
+        case OperationMode::AFTER_SUNRISE:  Serial.println("AFTER_SUNRISE"); break;
+        case OperationMode::MANUAL:          Serial.println("MANUAL"); break;
+    }
+
+    Serial.print("Mode Irrigation: ");
+    switch (irrigationMode) {
+        case OperationMode::BEFORE_SUNSET:  Serial.println("BEFORE_SUNSET"); break;
+        case OperationMode::AFTER_SUNSET:   Serial.println("AFTER_SUNSET"); break;
+        case OperationMode::BEFORE_SUNRISE: Serial.println("BEFORE_SUNRISE"); break;
+        case OperationMode::AFTER_SUNRISE:  Serial.println("AFTER_SUNRISE"); break;
+        case OperationMode::MANUAL:          Serial.println("MANUAL"); break;
+    }
+
+    Serial.print("État LED       : ");
+    Serial.println(LightingService::getState() ? "ON" : "OFF");
+
+    Serial.print("État Irrigation: ");
+    Serial.println(IrrigationService::getState() ? "ON" : "OFF");
 
     delay(1000);
 }

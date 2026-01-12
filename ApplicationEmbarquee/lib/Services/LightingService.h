@@ -12,8 +12,7 @@ public:
     static void init(int ledPin);
     static void turnOn();
     static void turnOff();
-    static bool getState() { return ledState; }  
+    static bool getState();
 };
 
-
-#endif
+#endif // LIGHTING_SERVICE_H

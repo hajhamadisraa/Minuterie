@@ -7,6 +7,8 @@
 
 // ================== LED ==================
 #define LED_PIN 2   // adapte si besoin
+#define IRRIGATION_PIN 5   // ou la broche que tu utilises pour le relais pompe
+
 
 // ================== NTP ==================
 #define GMT_OFFSET_SEC        3600   // UTC+1 (Tunisie)
@@ -16,9 +18,10 @@
 #define LIGHT_MODE AFTER_SUNSET
 
 // ================== MODE MANUEL ==================
-#define MANUAL_START_HOUR   22
+#define MANUAL_START_HOUR   8
 #define MANUAL_START_MINUTE 0
-#define MANUAL_END_HOUR     6
+#define MANUAL_END_HOUR     18
 #define MANUAL_END_MINUTE   0
+
 
 #endif
