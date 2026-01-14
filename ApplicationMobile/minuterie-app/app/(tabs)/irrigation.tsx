@@ -1,94 +1,121 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+type SolarSubMode = 'BEFORE_SUNRISE' | 'AFTER_SUNSET';
 
 export default function IrrigationSettings() {
+  const [mode, setMode] = useState<'SUNSET_SUNRISE' | 'MANUAL'>('SUNSET_SUNRISE');
+  const [solarSubMode, setSolarSubMode] = useState<SolarSubMode>('BEFORE_SUNRISE');
+  const [solarDelay, setSolarDelay] = useState('0'); // Nouveau champ délai
+  const [manualStart, setManualStart] = useState('06:00');
+  const [manualEnd, setManualEnd] = useState('06:15');
+
+  const solarModes: { key: SolarSubMode; label: string; icon: string }[] = [
+    { key: 'BEFORE_SUNRISE', label: 'Before Sunrise', icon: '🌄' },
+    { key: 'AFTER_SUNSET', label: 'After Sunset', icon: '🌇' },
+  ];
+
+  const requiresDelay = ['BEFORE_SUNRISE', 'AFTER_SUNSET'].includes(solarSubMode);
+
   return (
     <View style={styles.container}>
-      {/* Top App Bar */}
+      {/* Top Bar (style LightingSettings) */}
       <View style={styles.topBar}>
         <TouchableOpacity>
-          <Text style={styles.icon}>⬅️</Text>
+          <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Irrigation Settings</Text>
+        <Text style={styles.headerTitle}>Irrigation Settings</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView style={styles.main} contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Connection Status */}
-        <View style={styles.connectionStatus}>
-          <View style={styles.connectedDot} />
-          <Text style={styles.connectionText}>ESP32 Connected: Garden_Zone_01</Text>
-        </View>
-
-        {/* Operating Mode Header */}
-        <Text style={styles.sectionHeader}>Operating Mode</Text>
-
-        {/* Mode Selection Grid */}
-        <View style={styles.modeGrid}>
-          {/* Sunrise */}
-          <TouchableOpacity style={styles.modeCard}>
-            <View style={[styles.modeIconContainer, { backgroundColor: '#FFE5B4', marginBottom: 4 }]}>
-              <Text style={[styles.modeIcon, { color: '#FFA500' }]}>🌅</Text>
-            </View>
-            <Text style={styles.modeLabel}>Sunrise</Text>
-          </TouchableOpacity>
-          {/* Sunset */}
-          <TouchableOpacity style={styles.modeCard}>
-            <View style={[styles.modeIconContainer, { backgroundColor: '#E0E7FF', marginBottom: 4 }]}>
-              <Text style={[styles.modeIcon, { color: '#4B0082' }]}>🌇</Text>
-            </View>
-            <Text style={styles.modeLabel}>Sunset</Text>
-          </TouchableOpacity>
-          {/* Manual */}
-          <TouchableOpacity style={[styles.modeCard, styles.activeCard]}>
-            <View style={[styles.modeIconContainer, { backgroundColor: '#D1FAE5', marginBottom: 4 }]}>
-              <Text style={[styles.modeIcon, { color: '#10B981' }]}>💧</Text>
-            </View>
-            <Text style={styles.modeLabel}>Manual</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Watering Duration */}
-        <Text style={styles.sectionHeader}>Watering Duration</Text>
-        <Text style={styles.sectionSubHeader}>
-          Set how long the irrigation should remain active.
-        </Text>
-
-        {/* WheelPicker Placeholder */}
-        <View style={styles.wheelPicker}>
-          <View style={styles.wheelColumn}>
-            <Text style={styles.wheelValue}>00</Text>
-            <View style={styles.wheelSelected}>
-              <Text style={styles.wheelSelectedText}>00</Text>
-              <Text style={styles.wheelUnit}>HRS</Text>
-            </View>
-            <Text style={styles.wheelValue}>01</Text>
-          </View>
-          <Text style={styles.wheelSeparator}>:</Text>
-          <View style={styles.wheelColumn}>
-            <Text style={styles.wheelValue}>10</Text>
-            <View style={styles.wheelSelected}>
-              <Text style={styles.wheelSelectedText}>15</Text>
-              <Text style={styles.wheelUnit}>MIN</Text>
-            </View>
-            <Text style={styles.wheelValue}>20</Text>
-          </View>
-        </View>
-
-        {/* Summary Info */}
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryIcon}>ℹ️</Text>
-          <Text style={styles.summaryText}>
-            In <Text style={styles.boldPrimary}>Manual Mode</Text>, the irrigation
-            system will run once for <Text style={styles.boldPrimary}>15 minutes</Text> upon activation.
+      {/* Mode Selector */}
+      <View style={styles.modeSelector}>
+        <TouchableOpacity
+          style={[styles.modeButton, mode === 'SUNSET_SUNRISE' && styles.active]}
+          onPress={() => setMode('SUNSET_SUNRISE')}
+        >
+          <Text style={mode === 'SUNSET_SUNRISE' ? styles.activeText : styles.text}>
+            SUNSET/SUNRISE
           </Text>
-        </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.modeButton, mode === 'MANUAL' && styles.active]}
+          onPress={() => setMode('MANUAL')}
+        >
+          <Text style={mode === 'MANUAL' ? styles.activeText : styles.text}>
+            Manual
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.main} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Solar Sub-Modes */}
+        {mode === 'SUNSET_SUNRISE' && (
+          <View style={styles.cardContainer}>
+            {solarModes.map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.card, solarSubMode === item.key && styles.cardActive]}
+                onPress={() => setSolarSubMode(item.key)}
+              >
+                <Text style={styles.cardIcon}>{item.icon}</Text>
+                <View style={styles.cardText}>
+                  <Text style={styles.cardTitle}>{item.label}</Text>
+                </View>
+                <Text style={styles.cardStatus}>{solarSubMode === item.key ? '✅' : '⚪'}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {requiresDelay && (
+              <View style={styles.delayContainer}>
+                <Text style={styles.delayLabel}>Delay (minutes):</Text>
+                <TextInput
+                  style={styles.delayInput}
+                  value={solarDelay}
+                  onChangeText={setSolarDelay}
+                  placeholder="0"
+                  keyboardType="numeric"
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Manual Mode */}
+        {mode === 'MANUAL' && (
+          <View style={styles.manualCard}>
+            <Text style={styles.cardTitle}>Manual Watering Time</Text>
+            <View style={styles.manualTimeContainer}>
+              <View style={styles.manualTime}>
+                <Text style={styles.manualLabel}>Start Time</Text>
+                <TextInput
+                  style={styles.manualInput}
+                  value={manualStart}
+                  onChangeText={setManualStart}
+                  placeholder="HH:MM"
+                  keyboardType="numeric"
+                />
+              </View>
+              <View style={styles.manualTime}>
+                <Text style={styles.manualLabel}>End Time</Text>
+                <TextInput
+                  style={styles.manualInput}
+                  value={manualEnd}
+                  onChangeText={setManualEnd}
+                  placeholder="HH:MM"
+                  keyboardType="numeric"
+                />
+              </View>
+            </View>
+          </View>
+        )}
       </ScrollView>
 
-      {/* Fixed Footer Save Button */}
+      {/* Footer Save Button (style LightingSettings) */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>💾 Save Configuration</Text>
+          <Text style={styles.saveText}> Save Configuration</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -96,7 +123,7 @@ export default function IrrigationSettings() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  container: { flex: 1, backgroundColor: '#fff' },
 
   // Top Bar
   topBar: {
@@ -105,54 +132,69 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#eee',
   },
-  icon: { fontSize: 20 },
-  title: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', flex: 1 },
+  backIcon: { fontSize: 20 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', flex: 1, textAlign: 'center' },
 
-  // Main content
   main: { flex: 1 },
 
-  // Connection Status
-  connectionStatus: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8 },
-  connectedDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#10B981',
-    marginRight: 8,
+  // Mode selector
+  modeSelector: {
+    flexDirection: 'row',
+    margin: 16,
+    backgroundColor: '#f0f2f5',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  connectionText: { fontSize: 12, color: '#6B7280' },
+  modeButton: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  active: { backgroundColor: '#fff', elevation: 3 },
+  text: { color: '#60758a', fontWeight: '600' },
+  activeText: { color: '#111', fontWeight: '600' },
 
-  // Section headers
-  sectionHeader: { fontSize: 16, fontWeight: 'bold', color: '#111418', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4 },
-  sectionSubHeader: { fontSize: 12, color: '#6B7280', paddingHorizontal: 16, paddingBottom: 8 },
+  // Cards
+  cardContainer: { padding: 16 },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    marginBottom: 12,
+  },
+  cardActive: { borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,0.05)' },
+  cardIcon: { fontSize: 24, marginRight: 12 },
+  cardText: { flex: 1 },
+  cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#111418' },
+  cardStatus: { fontSize: 18 },
 
-  // Mode grid
-  modeGrid: { flexDirection: 'row', justifyContent: 'space-between', padding: 16 },
-  modeCard: { flex: 1, marginHorizontal: 4, padding: 12, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
-  activeCard: { borderColor: '#10B981', backgroundColor: 'rgba(16, 185, 129, 0.1)' },
-  modeIconContainer: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  modeIcon: { fontSize: 24 },
-  modeLabel: { fontSize: 12, fontWeight: 'bold', color: '#111418', textAlign: 'center', marginTop: 4 },
+  // Delay input
+  delayContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginLeft: 16 },
+  delayLabel: { fontSize: 14, fontWeight: 'bold', marginRight: 8 },
+  delayInput: { padding: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, width: 80, textAlign: 'center' },
 
-  // Wheel picker
-  wheelPicker: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, marginTop: 8 },
-  wheelColumn: { flex: 1, alignItems: 'center' },
-  wheelValue: { fontSize: 16, color: '#9CA3AF', height: 48, textAlignVertical: 'center' },
-  wheelSelected: { height: 56, width: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(59, 130, 246, 0.1)', borderRadius: 8 },
-  wheelSelectedText: { fontSize: 20, fontWeight: '900', color: '#3B82F6' },
-  wheelUnit: { position: 'absolute', right: 8, fontSize: 10, fontWeight: 'bold', color: 'rgba(59,130,246,0.5)' },
-  wheelSeparator: { fontSize: 24, fontWeight: 'bold', color: '#D1D5DB', marginHorizontal: 8 },
-
-  // Summary card
-  summaryCard: { flexDirection: 'row', padding: 12, marginHorizontal: 16, marginTop: 16, borderRadius: 12, backgroundColor: 'rgba(59, 130, 246, 0.1)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.1)', alignItems: 'flex-start' },
-  summaryIcon: { fontSize: 18, marginTop: 2, marginRight: 8 },
-  summaryText: { fontSize: 12, color: '#111418', flex: 1, lineHeight: 18 },
-  boldPrimary: { fontWeight: 'bold', color: '#3B82F6' },
+  // Manual card
+  manualCard: { padding: 16, borderRadius: 12, backgroundColor: '#fff', margin: 16 },
+  manualTimeContainer: { flexDirection: 'row', marginTop: 12 },
+  manualTime: { flex: 1, marginRight: 8 },
+  manualLabel: { fontSize: 12, fontWeight: 'bold', color: '#6B7280', marginBottom: 4 },
+  manualInput: { padding: 12, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, fontSize: 16 },
 
   // Footer
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(255,255,255,0.8)', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  saveButton: { backgroundColor: '#3B82F6', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  footer: {
+    padding: 16,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  saveButton: {
+    backgroundColor: '#0d7fff',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  saveText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 });

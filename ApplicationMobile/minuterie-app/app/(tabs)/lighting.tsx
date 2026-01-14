@@ -1,110 +1,128 @@
-import React from 'react';
-import { ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+type SolarSubMode = 
+  | 'SUNSET_TO_SUNRISE'
+  | 'BEFORE_SUNSET'
+  | 'AFTER_SUNSET'
+  | 'BEFORE_SUNRISE'
+  | 'AFTER_SUNRISE';
 
 export default function LightingSettings() {
+  const [mode, setMode] = useState<'SUNSET_SUNRISE' | 'MANUAL'>('SUNSET_SUNRISE');
+  const [solarSubMode, setSolarSubMode] = useState<SolarSubMode>('SUNSET_TO_SUNRISE');
+  const [solarDelay, setSolarDelay] = useState('0'); // renommé Offset → Delay
+  const [manualStart, setManualStart] = useState('19:00');
+  const [manualEnd, setManualEnd] = useState('06:30');
+
+  const solarModes: { key: SolarSubMode; label: string; desc: string; icon: string }[] = [
+    { key: 'SUNSET_TO_SUNRISE', label: 'Sunset to Sunrise', desc: 'Lighting is ON during this interval', icon: '🌙' },
+    { key: 'BEFORE_SUNSET', label: 'Before Sunset', desc: 'Lighting is ON before sunset', icon: '🌅' },
+    { key: 'AFTER_SUNSET', label: 'After Sunset', desc: 'Lighting is ON after sunset', icon: '🌇' },
+    { key: 'BEFORE_SUNRISE', label: 'Before Sunrise', desc: 'Lighting is ON before sunrise', icon: '🌄' },
+    { key: 'AFTER_SUNRISE', label: 'After Sunrise', desc: 'Lighting is ON after sunrise', icon: '☀️' },
+  ];
+
+  const requiresDelay = ['BEFORE_SUNSET','AFTER_SUNSET','BEFORE_SUNRISE','AFTER_SUNRISE'].includes(solarSubMode);
+
   return (
     <View style={styles.container}>
-      {/* Top App Bar */}
+      {/* Top Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity>
-          <Text style={styles.icon}>⬅️</Text>
+          <Text style={styles.backIcon}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Lighting Settings</Text>
-        <TouchableOpacity>
-          <Text style={styles.icon}>📶</Text>
+        <Text style={styles.headerTitle}>Lighting Settings</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      {/* Mode Selector */}
+      <View style={styles.modeSelector}>
+        <TouchableOpacity
+          style={[styles.modeButton, mode === 'SUNSET_SUNRISE' && styles.active]}
+          onPress={() => setMode('SUNSET_SUNRISE')}
+        >
+          <Text style={mode === 'SUNSET_SUNRISE' ? styles.activeText : styles.text}>
+            SUNSET/SUNRISE
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.modeButton, mode === 'MANUAL' && styles.active]}
+          onPress={() => setMode('MANUAL')}
+        >
+          <Text style={mode === 'MANUAL' ? styles.activeText : styles.text}>Manual</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.main} contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Mode Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mode Selection</Text>
-          <Text style={styles.sectionSubtitle}>
-            Choose a solar interval or set a manual schedule for your lights.
-          </Text>
-        </View>
-
-        {/* Mode Cards */}
-        <View style={styles.cardContainer}>
-          {/* Sunrise to Sunset */}
-          <TouchableOpacity style={styles.card}>
-            <View style={[styles.cardIconContainer, { backgroundColor: '#FEF3C7' }]}>
-              <Text style={[styles.cardIcon, { color: '#F59E0B' }]}>🌞</Text>
-            </View>
-            <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>Sunrise to Sunset</Text>
-              <Text style={styles.cardSubtitle}>Lighting is OFF during this interval</Text>
-            </View>
-            <Text style={styles.cardStatus}>⚪</Text>
-          </TouchableOpacity>
-
-          {/* Sunset to Sunrise */}
-          <TouchableOpacity style={[styles.card, styles.cardActive]}>
-            <View style={[styles.cardIconContainer, { backgroundColor: '#E0E7FF' }]}>
-              <Text style={[styles.cardIcon, { color: '#4F46E5' }]}>🌙</Text>
-            </View>
-            <View style={styles.cardText}>
-              <Text style={styles.cardTitle}>Sunset to Sunrise</Text>
-              <Text style={styles.cardSubtitle}>Lighting is ON during this interval</Text>
-            </View>
-            <Text style={styles.cardStatus}>✅</Text>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.divider} />
-
-          {/* Manual Time (Disabled) */}
-          <View style={styles.manualCard}>
-            <View style={styles.manualRow}>
-              <View style={[styles.cardIconContainer, { backgroundColor: '#EDE9FE' }]}>
-                <Text style={[styles.cardIcon, { color: '#8B5CF6' }]}>⏰</Text>
-              </View>
-              <View style={styles.cardText}>
-                <Text style={styles.cardTitle}>Manual Time</Text>
-                <Text style={styles.cardSubtitle}>Disabled while solar interval is active</Text>
-              </View>
-              <Text style={styles.cardStatus}>⚪</Text>
-            </View>
-
-            <View style={styles.manualTimeContainer}>
-              <View style={[styles.manualTime, { marginRight: 12 }]}>
-                <Text style={styles.manualLabel}>Start Time</Text>
-                <View style={styles.manualValueContainer}>
-                  <Text style={styles.manualValue}>19:00</Text>
+      <ScrollView style={styles.main} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Solar Sub-Modes */}
+        {mode === 'SUNSET_SUNRISE' && (
+          <View style={styles.cardContainer}>
+            {solarModes.map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.card, solarSubMode === item.key && styles.cardActive]}
+                onPress={() => setSolarSubMode(item.key)}
+              >
+                <Text style={styles.cardIcon}>{item.icon}</Text>
+                <View style={styles.cardText}>
+                  <Text style={styles.cardTitle}>{item.label}</Text>
+                  <Text style={styles.cardSubtitle}>{item.desc}</Text>
                 </View>
+                <Text style={styles.cardStatus}>{solarSubMode === item.key ? '✅' : '⚪'}</Text>
+              </TouchableOpacity>
+            ))}
+
+            {requiresDelay && (
+              <View style={styles.delayContainer}>
+                <Text style={styles.delayLabel}>Delay (minutes):</Text>
+                <TextInput
+                  style={styles.delayInput}
+                  value={solarDelay}
+                  onChangeText={setSolarDelay}
+                  placeholder="0"
+                  keyboardType="numeric"
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Manual Mode */}
+        {mode === 'MANUAL' && (
+          <View style={styles.manualCard}>
+            <Text style={styles.cardTitle}>Manual Time</Text>
+            <View style={styles.manualTimeContainer}>
+              <View style={styles.manualTime}>
+                <Text style={styles.manualLabel}>Start Time</Text>
+                <TextInput
+                  style={styles.manualInput}
+                  value={manualStart}
+                  onChangeText={setManualStart}
+                  placeholder="HH:MM"
+                  keyboardType="numeric"
+                />
               </View>
               <View style={styles.manualTime}>
                 <Text style={styles.manualLabel}>End Time</Text>
-                <View style={styles.manualValueContainer}>
-                  <Text style={styles.manualValue}>06:30</Text>
-                </View>
+                <TextInput
+                  style={styles.manualInput}
+                  value={manualEnd}
+                  onChangeText={setManualEnd}
+                  placeholder="HH:MM"
+                  keyboardType="numeric"
+                />
               </View>
             </View>
           </View>
-        </View>
-
-        {/* Device Status */}
-        <View style={styles.deviceCard}>
-          <View style={{ flex: 2, marginRight: 8 }}>
-            <Text style={styles.cardTitle}>Device Status</Text>
-            <Text style={styles.cardSubtitle}>
-              ESP32 Controller active. Current mode: Sunset Override.
-            </Text>
-          </View>
-          <ImageBackground
-            style={styles.deviceImage}
-            source={{
-              uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuANKqLPjSr0eOA9aBofF1euiDd1BVPyY_mwn9dM1BjhprtND6j8bqABgNRkWzKUreWku2lIDULDygWBVzF1dFdmZs1NTZjEKpmSGBhhB7eejSvFFgK5ENhgvwr4_ouEFID4JG4n53n2rZwGniO1XusNsyuBL90XxKNdgSyCjnCIxNI6tLYPCUu_PGgY5s0sGa-1SuxC1xxgfrMYlVobJLMOmf7HjiqoFAApkyIPpCxhxeWaSZ6ZXa2MZwJqECJOM9Sb3RMgdV8guOw',
-            }}
-            resizeMode="cover"
-          />
-        </View>
+        )}
       </ScrollView>
 
       {/* Footer Save Button */}
       <View style={styles.footer}>
         <TouchableOpacity style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>💾 Save Configuration</Text>
+          <Text style={styles.saveText}> Save Configuration</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -113,40 +131,68 @@ export default function LightingSettings() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  icon: { fontSize: 20 },
-  title: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', flex: 1 },
+
+  // Top Bar
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  backIcon: { fontSize: 20 },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', flex: 1, textAlign: 'center' },
 
   main: { flex: 1 },
 
-  section: { paddingHorizontal: 16, paddingVertical: 8 },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', paddingTop: 8 },
-  sectionSubtitle: { fontSize: 14, color: '#6B7280', paddingTop: 4 },
+  // Mode selector (style IrrigationSettings)
+  modeSelector: {
+    flexDirection: 'row',
+    margin: 16,
+    backgroundColor: '#f0f2f5',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modeButton: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  active: { backgroundColor: '#fff', elevation: 3 },
+  text: { color: '#60758a', fontWeight: '600' },
+  activeText: { color: '#111', fontWeight: '600' },
 
-  cardContainer: { paddingHorizontal: 16, paddingVertical: 8 },
-  card: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, backgroundColor: '#fff', borderWidth: 2, borderColor: 'transparent', marginBottom: 12 },
+  // Cards
+  cardContainer: { padding: 16 },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    marginBottom: 12,
+  },
   cardActive: { borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,0.05)' },
-  cardIconContainer: { width: 48, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  cardIcon: { fontSize: 24 },
+  cardIcon: { fontSize: 24, marginRight: 12 },
   cardText: { flex: 1 },
   cardTitle: { fontSize: 14, fontWeight: 'bold', color: '#111418' },
   cardSubtitle: { fontSize: 12, color: '#6B7280', marginTop: 2 },
   cardStatus: { fontSize: 18 },
 
-  divider: { height: 1, backgroundColor: '#E5E7EB', marginVertical: 12 },
+  // Delay input
+  delayContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginLeft: 16 },
+  delayLabel: { fontSize: 14, fontWeight: 'bold', marginRight: 8 },
+  delayInput: { padding: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, width: 80, textAlign: 'center' },
 
-  manualCard: { opacity: 0.4, padding: 16, borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: 'transparent' },
-  manualRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  manualTimeContainer: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#E5E7EB', paddingTop: 12 },
-  manualTime: { flex: 1 },
-  manualLabel: { fontSize: 10, fontWeight: 'bold', color: '#9CA3AF', marginBottom: 4, letterSpacing: 1 },
-  manualValueContainer: { padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', justifyContent: 'center', alignItems: 'center' },
-  manualValue: { fontSize: 16, fontWeight: 'bold', color: '#9CA3AF' },
+  // Manual card
+  manualCard: { padding: 16, borderRadius: 12, backgroundColor: '#fff', margin: 16 },
+  manualTimeContainer: { flexDirection: 'row', marginTop: 12 },
+  manualTime: { flex: 1, marginRight: 8 },
+  manualLabel: { fontSize: 12, fontWeight: 'bold', color: '#6B7280', marginBottom: 4 },
+  manualInput: { padding: 12, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, fontSize: 16 },
 
-  deviceCard: { flexDirection: 'row', padding: 16, borderRadius: 12, backgroundColor: '#fff', marginHorizontal: 16, marginTop: 8, overflow: 'hidden' },
-  deviceImage: { width: 100, height: 100, borderRadius: 12 },
-
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(255,255,255,0.8)', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  saveButton: { backgroundColor: '#3B82F6', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  saveButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  // Footer
+  footer: { padding: 16, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
+  saveButton: { backgroundColor: '#0d7fff', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  saveText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 });
