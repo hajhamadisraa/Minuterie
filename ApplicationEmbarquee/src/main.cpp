@@ -1,64 +1,56 @@
 #include <Arduino.h>
 #include <WiFi.h>
+
+// ================== Imports Sonnerie ==================
 #include "TimeHM.h"
 #include "BellTypes.h"
 #include "BellScheduler.h"
 #include "BellService.h"
+
+// ================== Imports Éclairage & Irrigation ==================
+#include "LightingService.h"
+#include "LightingScheduler.h"
+#include "IrrigationService.h"
+#include "IrrigationScheduler.h"
+#include "SunCalculator.h"
+#include "LocationService.h"
+
+// ================== Imports Communs ==================
 #include "NTPUtils.h"
 #include "TimeUtils.h"
 #include "Config.h"
 #include "WiFiModule.h"
+#include "OperationMode.h"
 
-// ================== INIT ==================
+// ================== INIT WiFi ==================
 WiFiModule wifi(WIFI_SSID, WIFI_PASSWORD);
 
-// ================== Configuration Bell ==================
-
-#define BELL_DURATION 10000   // Durée sonnerie : 10 secondes
-
 // ================== Configuration NTP ==================
-#define GMT_OFFSET_SEC 3600        // GMT+1 (Tunisie) : 1 heure = 3600 secondes
+#define GMT_OFFSET_SEC 3600        // GMT+1 (Tunisie)
 #define DAYLIGHT_OFFSET_SEC 0      // Pas d'heure d'été
 
-// ================== Variables globales ==================
+// ================== Configuration Sonnerie ==================
+#define BELL_DURATION 10000   // Durée sonnerie : 10 secondes
+
 unsigned long bellStartTime = 0;
 bool bellIsRinging = false;
-bool wifiConnected = false;
 
-// ================== MODE NORMAL ==================
-// Horaires fixes pour chaque jour de la semaine
-// Index : 0=Dimanche, 1=Lundi, 2=Mardi, 3=Mercredi, 4=Jeudi, 5=Vendredi, 6=Samedi
-// ================== MODE NORMAL ==================
 BellNormalSchedule normalSchedule[7] = {
-    // Dimanche
-    { {0, 0} },      // ✅ Pas de sonnerie (0:00 = désactivé)
-    
-    // Lundi
-    { {8, 0} },      // ✅ Sonnerie à 8:00
-    
-    // Mardi
-    { {8, 0} },      // ✅ Sonnerie à 8:00
-    
-    // Mercredi
-    { {9, 42} },     // ✅ Sonnerie à 9:38 (pour test)
-    
-    // Jeudi
-    { {8, 0} },      // ✅ Sonnerie à 8:00
-    
-    // Vendredi
-    { {11, 30} },    // ✅ Sonnerie à 11:30
-    
-    // Samedi
-    { {9, 0} }       // ✅ Sonnerie à 9:00
+    { {0, 0} },      // Dimanche - pas de sonnerie
+    { {8, 0} },      // Lundi - 8:00
+    { {8, 0} },      // Mardi - 8:00
+    { {8, 0} },      // Mercredi - 8:00
+    { {8, 0} },      // Jeudi - 8:00
+    { {11, 30} },    // Vendredi - 11:30
+    { {9, 0} }       // Samedi - 9:00
 };
 
-// ================== MODE SPÉCIAL ==================
 BellSpecialPeriod specialPeriods[] = {
     {
         {1, 3},    // 1er mars
-        {31, 3},   // 31 mars
+        {31, 3},   // 31 mars (Ramadan)
         {
-            { {0, 0} },     // Dimanche - pas de sonnerie
+            { {0, 0} },     // Dimanche
             { {9, 0} },     // Lundi - 9:00
             { {9, 0} },     // Mardi - 9:00
             { {9, 0} },     // Mercredi - 9:00
@@ -68,8 +60,8 @@ BellSpecialPeriod specialPeriods[] = {
         }
     },
     {
-        {1, 7},    // Période d'été
-        {31, 8},
+        {1, 7},    // 1er juillet
+        {31, 8},   // 31 août (Été)
         {
             { {0, 0} },     // Dimanche
             { {7, 0} },     // Lundi - 7:00
@@ -85,44 +77,37 @@ BellSpecialPeriod specialPeriods[] = {
 const int normalCount = 7;
 const int specialCount = 2;
 
-// ================== Connexion WiFi ==================
-void connectWiFi() {
-    Serial.println("\n🌐 Connexion WiFi...");
-    Serial.print("SSID: ");
-    Serial.println(WIFI_SSID);
-    
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        wifiConnected = true;
-        Serial.println("\n✅ WiFi connecté !");
-        Serial.print("📶 IP: ");
-        Serial.println(WiFi.localIP());
-    } else {
-        wifiConnected = false;
-        Serial.println("\n❌ Échec connexion WiFi");
-        Serial.println("⚠️ Vérifiez SSID et mot de passe");
-    }
-}
+// ================== Configuration Éclairage ==================
+OperationMode lightingMode = OperationMode::AFTER_SUNSET;
 
-// ================== Obtenir l'heure actuelle via NTP ==================
+ManualSchedule manualLighting = {
+    .start = {18, 0},  // 18:00
+    .end   = {23, 0}   // 23:00
+};
+
+// ================== Configuration Irrigation ==================
+OperationMode irrigationMode = OperationMode::BEFORE_SUNRISE;
+
+ManualIrrigationSchedule manualIrrigation = {
+    .start = {6, 0},   // 6:00
+    .end   = {6, 30}   // 6:30
+};
+
+int irrigationOffsetMinutes = 30;
+
+// ================== Variables globales ==================
+bool wifiConnected = false;
+
+// ================== Obtenir l'heure actuelle ==================
 TimeHM getCurrentTime() {
     if (wifiConnected) {
         return NTPUtils::now();
     } else {
-        // Fallback si WiFi non connecté
         return TimeUtils::now();
     }
 }
 
-// ================== Gestion de la sonnerie avec timer ==================
+// ================== Gestion de la sonnerie ==================
 void handleBell(const TimeHM& now) {
     bool shouldRing = BellScheduler::shouldRing(
         now, 
@@ -133,7 +118,6 @@ void handleBell(const TimeHM& now) {
     );
     
     if (shouldRing && !bellIsRinging) {
-        // Début de la sonnerie
         BellService::start();
         bellStartTime = millis();
         bellIsRinging = true;
@@ -142,7 +126,6 @@ void handleBell(const TimeHM& now) {
         Serial.printf("   Heure: %02d:%02d\n", now.hour, now.minute);
     }
     
-    // Arrêt automatique après 10 secondes
     if (bellIsRinging && (millis() - bellStartTime >= BELL_DURATION)) {
         BellService::stop();
         bellIsRinging = false;
@@ -150,22 +133,66 @@ void handleBell(const TimeHM& now) {
     }
 }
 
-// ================== Affichage des informations ==================
-void displayStatus(const TimeHM& now) {
+// ================== Gestion de l'éclairage ==================
+void handleLighting(const TimeHM& now, const SunTimes& sun) {
+    bool lightingActive = LightingScheduler::shouldBeActive(
+        lightingMode,
+        now,
+        sun,
+        (lightingMode == OperationMode::MANUAL) ? &manualLighting : nullptr
+    );
+
+    if (lightingActive) {
+        LightingService::turnOn();
+    } else {
+        LightingService::turnOff();
+    }
+}
+
+// ================== Gestion de l'irrigation ==================
+void handleIrrigation(const TimeHM& now, const SunTimes& sun) {
+    bool irrigationActive = IrrigationScheduler::shouldBeActive(
+        irrigationMode,
+        now,
+        sun,
+        irrigationOffsetMinutes,
+        (irrigationMode == OperationMode::MANUAL) ? &manualIrrigation : nullptr
+    );
+
+    if (irrigationActive) {
+        IrrigationService::start();
+    } else {
+        IrrigationService::stop();
+    }
+}
+
+// ================== Affichage du statut complet ==================
+void displayStatus(const TimeHM& now, const SunTimes& sun) {
     static unsigned long lastDisplay = 0;
     
-    if (millis() - lastDisplay >= 10000) { // Affichage toutes les 10 secondes
+    if (millis() - lastDisplay >= 10000) { // Toutes les 10 secondes
         lastDisplay = millis();
         
-        Serial.println("\n========================================");
-        Serial.printf("📅 Date : %02d/%02d/%04d\n", now.day, now.month, now.year);
-        Serial.printf("🕐 Heure : %02d:%02d:%02d\n", now.hour, now.minute, 0);
+        Serial.println("\n╔════════════════════════════════════════════════════════╗");
+        Serial.println("║        SYSTÈME INTELLIGENT - ÉTAT GLOBAL              ║");
+        Serial.println("╚════════════════════════════════════════════════════════╝");
         
-        // Nom du jour
+        // ========== Date et Heure ==========
+        Serial.println("\n📅 DATE ET HEURE");
+        Serial.printf("   Date : %02d/%02d/%04d\n", now.day, now.month, now.year);
+        Serial.printf("   Heure : %02d:%02d:%02d\n", now.hour, now.minute, 0);
+        
         const char* dayNames[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
-        Serial.printf("📆 Jour : %s\n", dayNames[now.dayOfWeek]);
+        Serial.printf("   Jour : %s\n", dayNames[now.dayOfWeek]);
         
-        // Détection du mode actif
+        // ========== Informations Solaires ==========
+        Serial.println("\n☀️ INFORMATIONS SOLAIRES");
+        Serial.printf("   Lever du soleil : %02d:%02d\n", sun.sunrise.hour, sun.sunrise.minute);
+        Serial.printf("   Coucher du soleil : %02d:%02d\n", sun.sunset.hour, sun.sunset.minute);
+        
+        // ========== Sonnerie ==========
+        Serial.println("\n🔔 SONNERIE");
+        
         bool inSpecial = false;
         int nowValue = now.month * 100 + now.day;
         
@@ -175,45 +202,79 @@ void displayStatus(const TimeHM& now) {
             
             if (nowValue >= startValue && nowValue <= endValue) {
                 inSpecial = true;
-                Serial.println("🎯 Mode : SPÉCIAL");
+                Serial.println("   Mode : SPÉCIAL");
                 Serial.printf("   Période : %02d/%02d → %02d/%02d\n", 
                     specialPeriods[i].startDate.day, 
                     specialPeriods[i].startDate.month,
                     specialPeriods[i].endDate.day,
                     specialPeriods[i].endDate.month);
                 
-                // Afficher l'horaire de sonnerie du jour
                 const auto& todaySchedule = specialPeriods[i].dailySchedule[now.dayOfWeek];
                 if (todaySchedule.start.hour != 0 || todaySchedule.start.minute != 0) {
-                    Serial.printf("   ⏰ Sonnerie aujourd'hui : %02d:%02d\n", 
+                    Serial.printf("   Sonnerie aujourd'hui : %02d:%02d\n", 
                         todaySchedule.start.hour, 
                         todaySchedule.start.minute);
                 } else {
-                    Serial.println("   ⏰ Pas de sonnerie aujourd'hui");
+                    Serial.println("   Pas de sonnerie aujourd'hui");
                 }
                 break;
             }
         }
         
         if (!inSpecial) {
-            Serial.println("📋 Mode : NORMAL");
+            Serial.println("   Mode : NORMAL");
             const auto& todaySchedule = normalSchedule[now.dayOfWeek];
             if (todaySchedule.start.hour != 0 || todaySchedule.start.minute != 0) {
-                Serial.printf("   ⏰ Sonnerie aujourd'hui : %02d:%02d\n", 
+                Serial.printf("   Sonnerie aujourd'hui : %02d:%02d\n", 
                     todaySchedule.start.hour, 
                     todaySchedule.start.minute);
             } else {
-                Serial.println("   ⏰ Pas de sonnerie aujourd'hui");
+                Serial.println("   Pas de sonnerie aujourd'hui");
             }
         }
         
-        Serial.printf("🔔 État sonnerie : %s\n", 
-            BellService::getState() ? "ON 🔊" : "OFF 🔇");
+        Serial.printf("   État : %s\n", BellService::getState() ? "ON 🔊" : "OFF 🔇");
         
-        Serial.printf("📡 WiFi : %s\n", wifiConnected ? "Connecté ✅" : "Déconnecté ❌");
-        Serial.printf("🕐 Source heure : %s\n", wifiConnected ? "NTP (Internet)" : "Horloge interne");
+        // ========== Éclairage ==========
+        Serial.println("\n💡 ÉCLAIRAGE");
+        Serial.print("   Mode : ");
+        switch (lightingMode) {
+            case OperationMode::BEFORE_SUNSET:  Serial.println("BEFORE_SUNSET"); break;
+            case OperationMode::AFTER_SUNSET:   Serial.println("AFTER_SUNSET"); break;
+            case OperationMode::BEFORE_SUNRISE: Serial.println("BEFORE_SUNRISE"); break;
+            case OperationMode::AFTER_SUNRISE:  Serial.println("AFTER_SUNRISE"); break;
+            case OperationMode::MANUAL:         
+                Serial.println("MANUAL");
+                Serial.printf("   Horaire : %02d:%02d → %02d:%02d\n",
+                    manualLighting.start.hour, manualLighting.start.minute,
+                    manualLighting.end.hour, manualLighting.end.minute);
+                break;
+        }
+        Serial.printf("   État : %s\n", LightingService::getState() ? "ON 💡" : "OFF 🌑");
         
-        Serial.println("========================================\n");
+        // ========== Irrigation ==========
+        Serial.println("\n💧 IRRIGATION");
+        Serial.print("   Mode : ");
+        switch (irrigationMode) {
+            case OperationMode::BEFORE_SUNSET:  Serial.println("BEFORE_SUNSET"); break;
+            case OperationMode::AFTER_SUNSET:   Serial.println("AFTER_SUNSET"); break;
+            case OperationMode::BEFORE_SUNRISE: Serial.println("BEFORE_SUNRISE"); break;
+            case OperationMode::AFTER_SUNRISE:  Serial.println("AFTER_SUNRISE"); break;
+            case OperationMode::MANUAL:         
+                Serial.println("MANUAL");
+                Serial.printf("   Horaire : %02d:%02d → %02d:%02d\n",
+                    manualIrrigation.start.hour, manualIrrigation.start.minute,
+                    manualIrrigation.end.hour, manualIrrigation.end.minute);
+                break;
+        }
+        Serial.printf("   État : %s\n", IrrigationService::getState() ? "ON 💧" : "OFF 🚫");
+        
+        // ========== Réseau ==========
+        Serial.println("\n📡 RÉSEAU");
+        Serial.printf("   WiFi : %s\n", wifiConnected ? "Connecté ✅" : "Déconnecté ❌");
+        Serial.printf("   Source heure : %s\n", wifiConnected ? "NTP (Internet)" : "Horloge interne");
+        
+        Serial.println("\n════════════════════════════════════════════════════════\n");
     }
 }
 
@@ -233,41 +294,81 @@ void setup() {
     delay(2000);
     
     Serial.println("\n\n");
-    Serial.println("╔════════════════════════════════════════╗");
-    Serial.println("║   SYSTÈME DE SONNERIE INTELLIGENTE    ║");
-    Serial.println("║         Mode NTP - Temps Réel         ║");
-    Serial.println("╚════════════════════════════════════════╝");
+    Serial.println("╔════════════════════════════════════════════════════════╗");
+    Serial.println("║    SYSTÈME INTELLIGENT MULTI-FONCTIONS                ║");
+    Serial.println("║    • Sonnerie automatique                             ║");
+    Serial.println("║    • Éclairage intelligent                            ║");
+    Serial.println("║    • Irrigation programmée                            ║");
+    Serial.println("╚════════════════════════════════════════════════════════╝");
     Serial.println();
     
-    // Initialisation de la sonnerie
+    // ========== Initialisation Sonnerie ==========
+    Serial.println("🔔 Initialisation de la sonnerie...");
     BellService::init(BELL_PIN);
-    Serial.println("✅ Service sonnerie initialisé");
-    Serial.printf("   Pin : %d\n", BELL_PIN);
-    Serial.printf("   Durée : %d secondes\n\n", BELL_DURATION / 1000);
+    Serial.printf("   ✅ Pin : %d\n", BELL_PIN);
+    Serial.printf("   ✅ Durée : %d secondes\n\n", BELL_DURATION / 1000);
     
-    // Connexion WiFi
-    connectWiFi();
+    // ========== Initialisation Éclairage ==========
+    Serial.println("💡 Initialisation de l'éclairage...");
+    LightingService::init(LED_PIN);
+    Serial.printf("   ✅ Pin : %d\n\n", LED_PIN);
     
-    // Initialisation NTP
+    // ========== Initialisation Irrigation ==========
+    Serial.println("💧 Initialisation de l'irrigation...");
+    IrrigationService::init(IRRIGATION_PIN);
+    Serial.printf("   ✅ Pin : %d\n\n", IRRIGATION_PIN);
+    
+    // ========== Connexion WiFi ==========
+    Serial.println("🌐 Connexion WiFi...");
+    Serial.printf("   SSID: %s\n", WIFI_SSID);
+    
+    wifi.connect();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        wifiConnected = true;
+        Serial.println("   ✅ WiFi connecté !");
+        Serial.printf("   📶 IP: %s\n\n", WiFi.localIP().toString().c_str());
+    } else {
+        wifiConnected = false;
+        Serial.println("   ❌ Échec connexion WiFi\n");
+    }
+    
+    // ========== Initialisation NTP ==========
     if (wifiConnected) {
-        Serial.println("\n🕐 Initialisation NTP...");
+        Serial.println("🕐 Initialisation NTP...");
         NTPUtils::init(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC);
-        delay(2000); // Attendre la synchronisation NTP
+        delay(2000);
         
         TimeHM now = NTPUtils::now();
-        Serial.println("✅ NTP synchronisé !");
+        Serial.println("   ✅ NTP synchronisé !");
         Serial.printf("   Heure actuelle : %02d:%02d\n", now.hour, now.minute);
-        Serial.printf("📅 Date : %02d/%02d/%04d\n", now.day, now.month, now.year);
+        Serial.printf("   Date : %02d/%02d/%04d\n\n", now.day, now.month, now.year);
     } else {
-        Serial.println("\n⚠️ NTP non disponible (pas de WiFi)");
+        Serial.println("⚠️ NTP non disponible (pas de WiFi)");
         Serial.println("   Utilisation de l'horloge interne\n");
     }
     
-    Serial.println("🚀 Système démarré et opérationnel !");
-    Serial.println("📋 Horaires configurés :");
-    Serial.println("   • Mode NORMAL : Lundi-Jeudi 8:00, Vendredi 11:30, Samedi 9:00");
-    Serial.println("   • Mode SPÉCIAL : Ramadan (mars), Été (juillet-août)");
-    Serial.println();
+    // ========== Initialisation Localisation ==========
+    if (wifiConnected && LocationService::update()) {
+        double lat = LocationService::getLatitude();
+        double lon = LocationService::getLongitude();
+        
+        Serial.println("📍 Localisation détectée");
+        Serial.printf("   Latitude : %.6f\n", lat);
+        Serial.printf("   Longitude : %.6f\n\n", lon);
+        
+        SunCalculator::init(lat, lon);
+        Serial.println("   ✅ Calcul solaire initialisé\n");
+    } else {
+        Serial.println("⚠️ Localisation non disponible\n");
+    }
+    
+    // ========== Initialisation Fallback Temps ==========
+    TimeUtils::init(8, 0);  // Démarrer à 08:00 si pas de WiFi
+
+    
+    Serial.println("🚀 SYSTÈME DÉMARRÉ ET OPÉRATIONNEL !\n");
+    Serial.println("════════════════════════════════════════════════════════\n");
 }
 
 // ================== LOOP ==================
@@ -285,50 +386,76 @@ void loop() {
     // Obtenir l'heure actuelle
     TimeHM now = getCurrentTime();
     
+    // Obtenir les horaires solaires
+    SunTimes sun = {
+        .sunrise = SunCalculator::getSunrise(),
+        .sunset  = SunCalculator::getSunset()
+    };
+    
     // Afficher le changement de minute
     displayMinuteChange(now);
     
-    // Gérer la sonnerie
+    // Gérer les 3 systèmes
     handleBell(now);
+    handleLighting(now, sun);
+    handleIrrigation(now, sun);
     
     // Afficher le statut complet
-    displayStatus(now);
+    displayStatus(now, sun);
     
     delay(1000); // Vérification chaque seconde
 }
 
 // ================== NOTES D'UTILISATION ==================
 /*
- * 📝 CONFIGURATION REQUISE :
+ * 📝 SYSTÈME MULTI-FONCTIONS
  * 
- * 1. Modifiez les constantes WiFi :
- *    - WIFI_SSID : nom de votre réseau WiFi
- *    - WIFI_PASSWORD : mot de passe WiFi
+ * Ce programme combine 3 fonctionnalités :
  * 
- * 2. Ajustez le fuseau horaire (GMT_OFFSET_SEC) :
- *    - Tunisie (GMT+1) : 3600
- *    - France (GMT+1) : 3600
- *    - Maroc (GMT+0) : 0
- *    - Algérie (GMT+1) : 3600
+ * 1. 🔔 SONNERIE AUTOMATIQUE
+ *    - Mode NORMAL : horaires fixes par jour de semaine
+ *    - Mode SPÉCIAL : périodes personnalisées (Ramadan, Été, etc.)
+ *    - Sonnerie de 10 secondes
  * 
- * 3. Connectez la sonnerie sur le pin GPIO défini (BELL_PIN = 25)
+ * 2. 💡 ÉCLAIRAGE INTELLIGENT
+ *    - Modes : BEFORE_SUNSET, AFTER_SUNSET, BEFORE_SUNRISE, AFTER_SUNRISE, MANUAL
+ *    - Basé sur le lever/coucher du soleil
+ *    - Localisation automatique via WiFi
  * 
- * 4. Adaptez les horaires dans normalSchedule[] et specialPeriods[]
+ * 3. 💧 IRRIGATION PROGRAMMÉE
+ *    - Mêmes modes que l'éclairage
+ *    - Offset configurable pour les modes BEFORE/AFTER
+ *    - Programmation flexible
  * 
- * 🔧 CÂBLAGE SONNERIE :
+ * 🔧 CONFIGURATION :
  * 
- * ESP32 GPIO25 → Relais IN
- * Relais COM → Sonnerie +
- * Relais NO → Alimentation +
- * Sonnerie - → Alimentation -
+ * Dans Config.h, définissez :
+ * - WIFI_SSID et WIFI_PASSWORD
+ * - BELL_PIN (GPIO pour sonnerie)
+ * - LED_PIN (GPIO pour éclairage)
+ * - IRRIGATION_PIN (GPIO pour pompe/vanne)
  * 
- * ⚠️ IMPORTANT :
- * - Utilisez un relais adapté à votre sonnerie (5V, 12V, 220V)
- * - Respectez les polarités
- * - Isolez correctement les connexions 220V si nécessaire
+ * 🎯 MODES DISPONIBLES :
+ * 
+ * - MANUAL : horaires fixes définis manuellement
+ * - BEFORE_SUNSET : activation X minutes avant le coucher du soleil
+ * - AFTER_SUNSET : activation après le coucher du soleil
+ * - BEFORE_SUNRISE : activation X minutes avant le lever du soleil
+ * - AFTER_SUNRISE : activation après le lever du soleil
+ * 
+ * 📊 AFFICHAGE :
+ * 
+ * Le système affiche toutes les 10 secondes :
+ * - Date et heure actuelles
+ * - Horaires solaires (lever/coucher)
+ * - État de chaque système (ON/OFF)
+ * - Mode actif pour chaque système
+ * - État du WiFi et source de l'heure
  * 
  * 🧪 TEST :
- * - Modifiez les horaires pour qu'ils correspondent à l'heure actuelle + 1 minute
- * - Vérifiez que la sonnerie démarre et s'arrête après 10 secondes
- * - Testez avec et sans WiFi
+ * 
+ * 1. Modifiez les modes et horaires dans les variables globales
+ * 2. Vérifiez la sortie série pour voir l'état de chaque système
+ * 3. Testez avec et sans WiFi
+ * 4. Vérifiez que chaque système fonctionne indépendamment
  */
