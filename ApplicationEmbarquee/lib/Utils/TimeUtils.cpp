@@ -1,40 +1,30 @@
 #include "TimeUtils.h"
 
 unsigned long TimeUtils::startMillis = 0;
+TimeHM TimeUtils::startTime = {0, 0};
 
-void TimeUtils::init(int startHour, int startMinute) {
-    startMillis = millis() - ((startHour * 60 + startMinute) * 1000); // 1 sec = 1 min simulée
+void TimeUtils::init(int startHour,
+                     int startMinute,
+                     int startDay,
+                     int startMonth,
+                     int startDayOfWeek) {
+    startTime.hour = startHour;
+    startTime.minute = startMinute;
+    startMillis = millis();
 }
 
 TimeHM TimeUtils::now() {
-    unsigned long elapsed = (millis() - startMillis) / 1000;
-    int totalMinutes = elapsed % (24 * 60);
+    unsigned long elapsedMinutes = (millis() - startMillis) / 60000;
 
-    TimeHM t;
-    t.hour = totalMinutes / 60;
-    t.minute = totalMinutes % 60;
-    return t;
+    TimeHM current;
+    current.hour = (startTime.hour + (startTime.minute + elapsedMinutes) / 60) % 24;
+    current.minute = (startTime.minute + elapsedMinutes) % 60;
+
+    return current;
 }
 
-bool TimeUtils::isAfter(const TimeHM& a, const TimeHM& b) {
-    return (a.hour > b.hour) || (a.hour == b.hour && a.minute > b.minute);
-}
-
-bool TimeUtils::isBefore(const TimeHM& a, const TimeHM& b) {
-    return (a.hour < b.hour) || (a.hour == b.hour && a.minute < b.minute);
-}
-
-bool TimeUtils::isInRange(const TimeHM& start, const TimeHM& end) {
-    TimeHM current = now();
-    if (isBefore(end, start)) {
-        return isAfter(current, start) || isBefore(current, end);
-    } else {
-        return isAfter(current, start) && isBefore(current, end);
-    }
-}
-
-String TimeUtils::toString(const TimeHM& t) {
-    char buffer[6];
-    sprintf(buffer, "%02d:%02d", t.hour, t.minute);
+String TimeUtils::toString(const TimeHM& time) {
+    char buffer[6];  // HH:MM + '\0'
+    snprintf(buffer, sizeof(buffer), "%02d:%02d", time.hour, time.minute);
     return String(buffer);
 }

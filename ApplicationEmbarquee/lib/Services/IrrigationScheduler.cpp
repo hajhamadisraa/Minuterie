@@ -26,7 +26,7 @@ bool IrrigationScheduler::shouldBeActive(
     switch (mode) {
         case OperationMode::BEFORE_SUNSET:
             end = sun.sunset;
-            start = {sun.sunset.hour, sun.sunset.minute - irrigationOffsetMinutes};
+            start = TimeHM(sun.sunset.hour, sun.sunset.minute - irrigationOffsetMinutes);
             if (start.minute < 0) {
                 start.hour -= 1;
                 start.minute += 60;
@@ -35,7 +35,7 @@ bool IrrigationScheduler::shouldBeActive(
 
         case OperationMode::AFTER_SUNSET:
             start = sun.sunset;
-            end = {sun.sunset.hour, sun.sunset.minute + irrigationOffsetMinutes};
+            end = TimeHM(sun.sunset.hour, sun.sunset.minute + irrigationOffsetMinutes);
             if (end.minute >= 60) {
                 end.hour += 1;
                 end.minute -= 60;
@@ -44,7 +44,7 @@ bool IrrigationScheduler::shouldBeActive(
 
         case OperationMode::BEFORE_SUNRISE:
             end = sun.sunrise;
-            start = {sun.sunrise.hour, sun.sunrise.minute - irrigationOffsetMinutes};
+            start = TimeHM(sun.sunrise.hour, sun.sunrise.minute - irrigationOffsetMinutes);
             if (start.minute < 0) {
                 start.hour -= 1;
                 start.minute += 60;
@@ -53,7 +53,7 @@ bool IrrigationScheduler::shouldBeActive(
 
         case OperationMode::AFTER_SUNRISE:
             start = sun.sunrise;
-            end = {sun.sunrise.hour, sun.sunrise.minute + irrigationOffsetMinutes};
+            end = TimeHM(sun.sunrise.hour, sun.sunrise.minute + irrigationOffsetMinutes);
             if (end.minute >= 60) {
                 end.hour += 1;
                 end.minute -= 60;
