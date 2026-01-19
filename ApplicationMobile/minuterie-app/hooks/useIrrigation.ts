@@ -1,7 +1,7 @@
 // minuterie-app/hooks/useIrrigation.ts
 import { onValue, push, ref, set } from 'firebase/database';
 import { useEffect, useState } from 'react';
-import { database } from '../firebase/config.js';
+import { auth, database } from '../firebase/config.js';
 
 // Types pour les sub-modes solaires de l’irrigation
 export type SolarSubModeIrrigation = 'BEFORE_SUNRISE' | 'AFTER_SUNSET';
@@ -15,7 +15,7 @@ export function useIrrigation() {
   const [manualStart, setManualStartLocal] = useState('06:00');
   const [manualEnd, setManualEndLocal] = useState('06:15');
 
-  // Lecture initiale depuis Firebase
+  // --- Lecture initiale depuis Firebase ---
   useEffect(() => {
     const irrigationRef = ref(database, 'irrigation');
 
@@ -50,36 +50,46 @@ export function useIrrigation() {
     return () => unsubscribe();
   }, []);
 
-  // --- Fonctions pour écrire dans Firebase ---
+  // --- Helpers pour écrire dans Firebase ---
+  const safeSet = (path: string, value: any, logEvent: string) => {
+    if (!auth.currentUser) {
+      console.warn(`[Irrigation] Utilisateur non authentifié, écriture refusée: ${path}`);
+      return;
+    }
+    set(ref(database, path), value)
+      .then(() => {
+        push(ref(database, 'logs'), { time: new Date().toISOString(), event: logEvent });
+      })
+      .catch(err => {
+        console.error(`[Irrigation] Erreur lors de l'écriture ${path}:`, err.message);
+      });
+  };
+
+  // --- Fonctions publiques ---
   const setState = (newState: 'on' | 'off') => {
     setStateLocal(newState);
-    set(ref(database, 'irrigation/state'), newState);
-    push(ref(database, 'logs'), { time: new Date().toISOString(), event: `Irrigation ${newState}` });
+    safeSet('irrigation/state', newState, `Irrigation ${newState}`);
   };
 
   const setMode = (newMode: IrrigationMode) => {
     setModeLocal(newMode);
-    set(ref(database, 'irrigation/mode'), newMode);
-    push(ref(database, 'logs'), { time: new Date().toISOString(), event: `Mode Irrigation changé: ${newMode}` });
+    safeSet('irrigation/mode', newMode, `Mode Irrigation changé: ${newMode}`);
   };
 
   const setManualSchedule = (start: string, end: string) => {
     setManualStartLocal(start);
     setManualEndLocal(end);
-    set(ref(database, 'irrigation/schedules/manual'), { startTime: start, endTime: end });
-    push(ref(database, 'logs'), { time: new Date().toISOString(), event: `Horaires manuels modifiés: ${start} → ${end}` });
+    safeSet('irrigation/schedules/manual', { startTime: start, endTime: end }, `Horaires manuels modifiés: ${start} → ${end}`);
   };
 
   const setSolarScheduleDelay = (delayMinutes: string) => {
     setSolarDelayLocal(delayMinutes);
-    set(ref(database, 'irrigation/schedules/sunset_to_sunrise/delay'), Number(delayMinutes));
-    push(ref(database, 'logs'), { time: new Date().toISOString(), event: `Delay solaire changé: ${delayMinutes} min` });
+    safeSet('irrigation/schedules/sunset_to_sunrise/delay', Number(delayMinutes), `Delay solaire changé: ${delayMinutes} min`);
   };
 
   const setSolarSubMode = (subMode: SolarSubModeIrrigation) => {
     setSolarSubModeLocal(subMode);
-    set(ref(database, 'irrigation/schedules/sunset_to_sunrise/subMode'), subMode);
-    push(ref(database, 'logs'), { time: new Date().toISOString(), event: `SubMode solaire changé: ${subMode}` });
+    safeSet('irrigation/schedules/sunset_to_sunrise/subMode', subMode, `SubMode solaire changé: ${subMode}`);
   };
 
   return {

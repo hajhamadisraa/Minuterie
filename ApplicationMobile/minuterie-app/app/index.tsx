@@ -9,11 +9,9 @@ export default function Welcome() {
 
   return (
     <View style={styles.container}>
-      {/* Background Circles */}
       <View style={styles.topCircle} />
       <View style={styles.bottomCircle} />
 
-      {/* Logo Section */}
       <View style={styles.logoContainer}>
         <View style={styles.logo}>
           <MaterialIcons name="access-time" size={80} color="#0d7fff" />
@@ -28,7 +26,6 @@ export default function Welcome() {
         </Text>
       </View>
 
-      {/* Features */}
       <View style={styles.features}>
         <View style={styles.featureItem}>
           <View style={styles.featureIcon}>
@@ -50,12 +47,14 @@ export default function Welcome() {
         </View>
       </View>
 
-      {/* Get Started Button */}
-      <Pressable style={styles.button} onPress={() => router.replace('/(tabs)/dashboard')}>
+      {/* ✅ Bouton qui redirige vers la page login */}
+      <Pressable 
+        style={styles.button} 
+        onPress={() => router.push('/(auth)/login')}
+      >
         <Text style={styles.buttonText}>Get Started</Text>
       </Pressable>
 
-      {/* Footer */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>Powered by ESP32 Technology</Text>
         <Text style={styles.footerMeta}>v1.0.4 • Secure Connection</Text>
@@ -65,7 +64,6 @@ export default function Welcome() {
 }
 
 const { width, height } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
