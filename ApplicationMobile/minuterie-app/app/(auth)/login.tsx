@@ -1,41 +1,52 @@
-// app/(auth)/login.tsx
-import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { auth } from "@/firebase/config"; // ✅ chemin unifié
+import { MaterialIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { auth } from "../../firebase/config"; // chemin correct
+  Alert,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 export default function LoginScreen() {
   const router = useRouter();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-  try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    // Login réussi
-    console.log('User logged in:', userCredential.user);
-    router.replace('/(tabs)/dashboard');
-  } catch (error: any) {
-    console.log(error);
-    Alert.alert('Login failed', error.message);
-  }
-};
+    if (!email || !password) {
+      Alert.alert("Erreur", "Veuillez remplir tous les champs");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+
+      console.log("User logged in:", userCredential.user.uid);
+
+      router.replace("/(tabs)/dashboard");
+    } catch (error: any) {
+      Alert.alert("Login failed", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
-      {/* Background Circles */}
       <View style={styles.topCircle} />
       <View style={styles.bottomCircle} />
 
@@ -47,21 +58,17 @@ export default function LoginScreen() {
             <MaterialIcons name="hub" size={20} color="#0d7fff" />
           </View>
         </View>
-        <Text style={styles.title}>Admin Login</Text>
+        <Text style={styles.title}>Login</Text>
         <Text style={styles.subtitle}>
           Secure Access to Smart Minuterie
         </Text>
       </View>
 
-      {/* Input Form */}
+      {/* Form */}
       <View style={styles.form}>
+        {/* Email */}
         <View style={styles.inputContainer}>
-          <MaterialIcons
-            name="mail"
-            size={20}
-            color="#60758a"
-            style={styles.inputIcon}
-          />
+          <MaterialIcons name="mail" size={20} color="#60758a" />
           <TextInput
             placeholder="admin@example.com"
             style={styles.input}
@@ -71,39 +78,50 @@ export default function LoginScreen() {
           />
         </View>
 
+        {/* Password */}
         <View style={styles.inputContainer}>
-          <MaterialIcons
-            name="lock"
-            size={20}
-            color="#60758a"
-            style={styles.inputIcon}
-          />
+          <MaterialIcons name="lock" size={20} color="#60758a" />
           <TextInput
             placeholder="••••••••"
             style={styles.input}
             value={password}
             onChangeText={setPassword}
-            secureTextEntry
+            secureTextEntry={!showPassword}
           />
-          <TouchableOpacity style={styles.eyeButton}>
-            <MaterialIcons name="visibility" size={20} color="#60758a" />
+          <TouchableOpacity
+            onPress={() => setShowPassword((p) => !p)}
+          >
+            <MaterialIcons
+              name={showPassword ? "visibility-off" : "visibility"}
+              size={20}
+              color="#60758a"
+            />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          onPress={() => Alert.alert('Forgot Password', 'Feature not implemented')}
-        >
+        <TouchableOpacity onPress={() => router.push("/(auth)/forgot-password")}>
           <Text style={styles.forgotText}>Forgot Password?</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginText}>Login</Text>
+
+        <TouchableOpacity
+          style={styles.loginButton}
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.loginText}>
+            {loading ? "Connexion..." : "Login"}
+          </Text>
         </TouchableOpacity>
 
         <View style={styles.footer}>
           <Text style={styles.securityText}>Authorized Personnel Only</Text>
           <View style={styles.footerVersion}>
-            <MaterialIcons name="verified-user" size={14} color="#60758a" />
+            <MaterialIcons
+              name="verified-user"
+              size={14}
+              color="#60758a"
+            />
             <Text style={styles.versionText}>v1.0.4</Text>
           </View>
         </View>
@@ -111,6 +129,7 @@ export default function LoginScreen() {
     </View>
   );
 }
+
 
 const { width } = Dimensions.get('window');
 

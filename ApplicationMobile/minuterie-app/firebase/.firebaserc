@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "smart-timer-iot",
+    "smart-timer": "smart-timer-iot"
+  },
+  "targets": {},
+  "etags": {}
+}
