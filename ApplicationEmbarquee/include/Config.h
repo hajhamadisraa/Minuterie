@@ -4,6 +4,9 @@
 // ================== WIFI ==================
 #define WIFI_SSID     "@TSC_GUEST"
 #define WIFI_PASSWORD "1T2s3C45678"
+// ================== Firebase ==================
+#define FIREBASE_API_KEY "AIzaSyBRMnoeSS22y7YfnjZ5I7spdae_tWon9TI"
+#define FIREBASE_DATABASE_URL "https://smart-timer-iot-default-rtdb.firebaseio.com"
 
 // ================== LED ==================
 #define LED_PIN 2   // adapte si besoin
