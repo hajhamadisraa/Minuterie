@@ -138,3 +138,124 @@ void FirebaseService::getManualSchedule(String& startTime, String& endTime) {
         endTime = firebaseData.stringData();
     }
 }
+
+// ==================== IRRIGATION (NOUVEAU) ====================
+
+bool FirebaseService::setIrrigationState(const String& state) {
+    if (!Firebase.ready()) return false;
+    return Firebase.RTDB.setString(&firebaseData, "irrigation/state", state);
+}
+
+bool FirebaseService::setIrrigationMode(const String& mode) {
+    if (!Firebase.ready()) return false;
+    return Firebase.RTDB.setString(&firebaseData, "irrigation/mode", mode);
+}
+
+String FirebaseService::getIrrigationState() {
+    if (!Firebase.ready()) return "";
+    if (Firebase.RTDB.getString(&firebaseData, "irrigation/state")) {
+        return firebaseData.stringData();
+    }
+    return "";
+}
+
+String FirebaseService::getIrrigationMode() {
+    if (!Firebase.ready()) return "";
+    if (Firebase.RTDB.getString(&firebaseData, "irrigation/mode")) {
+        return firebaseData.stringData();
+    }
+    return "";
+}
+
+String FirebaseService::getIrrigationSolarSubMode() {
+    if (!Firebase.ready()) return "";
+    if (Firebase.RTDB.getString(&firebaseData, "irrigation/schedules/sunset_to_sunrise/subMode")) {
+        return firebaseData.stringData();
+    }
+    return "";
+}
+
+int FirebaseService::getIrrigationSolarDelay() {
+    if (!Firebase.ready()) return 0;
+    if (Firebase.RTDB.getInt(&firebaseData, "irrigation/schedules/sunset_to_sunrise/delay")) {
+        return firebaseData.intData();
+    }
+    return 0;
+}
+
+void FirebaseService::getIrrigationManualSchedule(String& startTime, String& endTime) {
+    if (!Firebase.ready()) return;
+    
+    if (Firebase.RTDB.getString(&firebaseData, "irrigation/schedules/manual/startTime")) {
+        startTime = firebaseData.stringData();
+    }
+    
+    if (Firebase.RTDB.getString(&firebaseData, "irrigation/schedules/manual/endTime")) {
+        endTime = firebaseData.stringData();
+    }
+}
+
+// ==================== SONNERIES (BELLS) - CORRECTION MAJEURE ====================
+
+String FirebaseService::getNormalBells() {
+    if (!Firebase.ready()) {
+        Serial.println("⚠ Firebase non prêt");
+        return "[]";
+    }
+    
+    // ✅ CORRECTION : Utiliser getArray() ou vérifier le type de données
+    if (Firebase.RTDB.getJSON(&firebaseData, "bells/normal")) {
+        String jsonStr = firebaseData.jsonString();
+        
+        // Debug amélioré
+        Serial.println("─────────────────────────────────────────");
+        Serial.print("Longueur JSON: ");
+        Serial.print(jsonStr.length());
+        Serial.println(" caractères");
+        Serial.print("Contenu JSON: ");
+        Serial.println(jsonStr);
+        Serial.println("─────────────────────────────────────────");
+        
+        // Vérifier si le JSON est vide ou null
+        if (jsonStr.length() == 0 || jsonStr == "null" || jsonStr == "") {
+            Serial.println("❌ PROBLÈME: Firebase retourne un JSON vide/null!");
+            Serial.println("Vérifiez:");
+            Serial.println("  1. Le chemin Firebase dans getNormalBells()");
+            Serial.println("  2. Les permissions de lecture dans Firebase");
+            Serial.println("  3. Que les données existent dans /bells/normal/");
+            return "[]";
+        }
+        
+        return jsonStr;
+    } else {
+        Serial.print("❌ Erreur Firebase getNormalBells: ");
+        Serial.println(firebaseData.errorReason().c_str());
+        return "[]";
+    }
+}
+
+String FirebaseService::getSpecialBells() {
+    if (!Firebase.ready()) {
+        Serial.println("⚠ Firebase non prêt");
+        return "[]";
+    }
+    
+    if (Firebase.RTDB.getJSON(&firebaseData, "bells/special")) {
+        String jsonStr = firebaseData.jsonString();
+        
+        Serial.print("Longueur JSON: ");
+        Serial.print(jsonStr.length());
+        Serial.println(" caractères");
+        
+        if (jsonStr.length() == 0 || jsonStr == "null" || jsonStr == "") {
+            Serial.println("⚠ Aucune période spéciale trouvée");
+            return "[]";
+        }
+        
+        return jsonStr;
+    } else {
+        Serial.print("❌ Erreur Firebase getSpecialBells: ");
+        Serial.println(firebaseData.errorReason().c_str());
+        return "[]";
+    }
+}

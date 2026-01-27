@@ -5,34 +5,49 @@ bool BellScheduler::shouldRing(
     const BellNormalSchedule normal[], int normalCount,
     const BellSpecialPeriod special[], int specialCount
 ) {
-    // Vérifie les périodes spéciales
+    int currentMinutes = now.hour * 60 + now.minute;
+
+    // Vérifier les périodes spéciales d'abord (prioritaires)
     for (int i = 0; i < specialCount; i++) {
-        const auto& sp = special[i];
-        if (isInSpecialPeriod(now, sp)) {
-            int weekday = now.dayOfWeek;
-            const auto& sched = sp.dailySchedule[weekday];
-            // ✅ Vérifier seulement l'heure de début (minute exacte)
-            return (now.hour == sched.start.hour && now.minute == sched.start.minute);
+        const BellSpecialPeriod& sp = special[i];
+        
+        // Vérifier si on est dans la période
+        bool inPeriod = false;
+        if ((now.month > sp.startDate.mois || 
+            (now.month == sp.startDate.mois && now.day >= sp.startDate.jour)) &&
+            (now.month < sp.endDate.mois || 
+            (now.month == sp.endDate.mois && now.day <= sp.endDate.jour))) {
+            inPeriod = true;
+        }
+
+        if (inPeriod) {
+            int weekday = now.dayOfWeek; // 0=Dim, 1=Lun, etc.
+            TimeHM bellTime = sp.dailySchedule[weekday].start;
+            int bellMinutes = bellTime.hour * 60 + bellTime.minute;
+            
+            if (currentMinutes == bellMinutes) {
+                return true;
+            }
         }
     }
 
-    // Mode normal
-    int weekday = now.dayOfWeek;
-    if (weekday >= normalCount) return false;
-    const auto& sched = normal[weekday];
-    
-    // ✅ Vérifier seulement l'heure de début (minute exacte)
-    return (now.hour == sched.start.hour && now.minute == sched.start.minute);
-}
+    // Vérifier les sonneries normales
+    for (int i = 0; i < normalCount; i++) {
+        const BellNormalSchedule& bell = normal[i];
+        
+        // Vérifier le jour de la semaine
+        // Si dayOfWeek == -1, c'est tous les jours
+        // Sinon, vérifier que le jour actuel correspond
+        if (bell.dayOfWeek != -1 && bell.dayOfWeek != now.dayOfWeek) {
+            continue; // Pas le bon jour
+        }
 
-bool BellScheduler::isInSpecialPeriod(const TimeHM& now, const BellSpecialPeriod& sp) {
-    int nowValue = now.month * 100 + now.day;
-    int startValue = sp.startDate.month * 100 + sp.startDate.day;
-    int endValue   = sp.endDate.month * 100 + sp.endDate.day;
-    return nowValue >= startValue && nowValue <= endValue;
-}
+        int bellMinutes = bell.start.hour * 60 + bell.start.minute;
+        
+        if (currentMinutes == bellMinutes) {
+            return true;
+        }
+    }
 
-// ✅ Cette fonction n'est plus utilisée, mais on la garde pour compatibilité
-bool BellScheduler::isBetween(const TimeHM& now, const TimeHM& start, const TimeHM& end) {
     return false;
 }

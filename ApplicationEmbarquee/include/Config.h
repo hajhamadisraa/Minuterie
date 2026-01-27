@@ -10,8 +10,8 @@
 
 // ================== LED ==================
 #define LED_PIN 2   // adapte si besoin
-#define IRRIGATION_PIN 5   // ou la broche que tu utilises pour le relais pompe
 #define BELL_PIN        18   // <-- pin pour la sonnerie
+#define IRRIGATION_PIN 4 
 
 // ================== NTP ==================
 #define GMT_OFFSET_SEC        3600   // UTC+1 (Tunisie)

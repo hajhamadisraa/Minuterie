@@ -5,5 +5,7 @@ enum class OperationMode {
     AFTER_SUNSET,
     BEFORE_SUNRISE,
     AFTER_SUNRISE,
+    SUNSET_TO_SUNRISE,
     MANUAL
 };
+ 
