@@ -17,7 +17,7 @@ export default function RootLayout() {
       // Vérifie que c'est un lien de reset password
       if (queryParams?.mode === 'resetPassword' && queryParams?.oobCode) {
         router.push({
-          pathname: '/(auth)/reset-password',
+          pathname: '/(auth)/forgot-password',
           params: { oobCode: queryParams.oobCode }
         });
       }
@@ -37,6 +37,7 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

@@ -21,25 +21,24 @@ export default function ForgotPassword() {
 
   const handleResetPassword = async () => {
     if (!email.trim()) {
-      Alert.alert('Erreur', 'Veuillez entrer votre adresse email');
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      Alert.alert('Erreur', 'Adresse email invalide');
+      Alert.alert('Error', 'Invalid email address');
       return;
     }
 
     try {
       setLoading(true);
 
-      // Version simplifiée - Firebase utilisera sa page par défaut
       await sendPasswordResetEmail(auth, email.trim());
 
       Alert.alert(
-        'Email envoyé ✅',
-        'Un lien de réinitialisation a été envoyé à votre adresse email.\n\nCliquez sur le lien dans l\'email pour réinitialiser votre mot de passe.',
+        'Email Sent ✅',
+        'A password reset link has been sent to your email address.\n\nClick the link in the email to reset your password.',
         [
           {
             text: 'OK',
@@ -53,30 +52,30 @@ export default function ForgotPassword() {
     } catch (error: any) {
       console.error('Reset password error:', error.code, error.message);
 
-      let errorMessage = 'Une erreur est survenue. Veuillez réessayer.';
+      let errorMessage = 'An error occurred. Please try again.';
 
       switch (error.code) {
         case 'auth/user-not-found':
-          errorMessage = 'Si cette adresse existe, un email a été envoyé.';
+          errorMessage = 'If this address exists, an email has been sent.';
           break;
         case 'auth/invalid-email':
-          errorMessage = 'Adresse email invalide';
+          errorMessage = 'Invalid email address';
           break;
         case 'auth/too-many-requests':
-          errorMessage = 'Trop de tentatives. Réessayez dans quelques minutes.';
+          errorMessage = 'Too many attempts. Please try again in a few minutes.';
           break;
         case 'auth/network-request-failed':
-          errorMessage = 'Erreur de connexion. Vérifiez votre internet.';
+          errorMessage = 'Connection error. Check your internet.';
           break;
         case 'auth/unauthorized-continue-uri':
-          errorMessage = 'URL non autorisée. Vérifiez la configuration Firebase.';
+          errorMessage = 'Unauthorized URL. Check Firebase configuration.';
           break;
         case 'auth/invalid-continue-uri':
-          errorMessage = 'URL invalide. Vérifiez la configuration Firebase.';
+          errorMessage = 'Invalid URL. Check Firebase configuration.';
           break;
       }
 
-      Alert.alert('Erreur', errorMessage);
+      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -99,9 +98,9 @@ export default function ForgotPassword() {
         <View style={styles.iconCircle}>
           <MaterialIcons name="lock-reset" size={40} color="#0d7fff" />
         </View>
-        <Text style={styles.title}>Mot de passe oublié ?</Text>
+        <Text style={styles.title}>Forgot Password?</Text>
         <Text style={styles.subtitle}>
-          Entrez votre email pour recevoir{'\n'}un lien de réinitialisation
+          Enter your email to receive{'\n'}a reset link
         </Text>
       </View>
 
@@ -128,7 +127,7 @@ export default function ForgotPassword() {
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Envoyer le lien</Text>
+            <Text style={styles.buttonText}>Send Reset Link</Text>
           )}
         </TouchableOpacity>
 
@@ -137,13 +136,13 @@ export default function ForgotPassword() {
           onPress={() => router.back()}
           disabled={loading}
         >
-          <Text style={styles.cancelText}>Annuler</Text>
+          <Text style={styles.cancelText}>Cancel</Text>
         </TouchableOpacity>
 
         <View style={styles.infoBox}>
           <MaterialIcons name="info-outline" size={16} color="#60758a" />
           <Text style={styles.infoText}>
-            Vous recevrez un email. Cliquez sur le lien pour réinitialiser votre mot de passe.
+            You will receive an email. Click the link to reset your password.
           </Text>
         </View>
       </View>
