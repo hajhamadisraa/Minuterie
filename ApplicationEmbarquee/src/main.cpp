@@ -1,3 +1,6 @@
+#define FB_TCP_CLIENT_RX_BUFFER_SIZE 4096
+#define FB_TCP_CLIENT_TX_BUFFER_SIZE 1024
+
 #include <WiFi.h>
 #include "FirebaseService.h"
 #include "Config.h"
@@ -37,7 +40,7 @@ int specialCount = 0;
 
 bool bellIsRinging = false;
 unsigned long bellStartTime = 0;
-const unsigned long BELL_DURATION = 10000; // 10 secondes
+const unsigned long BELL_DURATION = 10000;
 int lastCheckedMinute = -1;
 
 SunTimes sunTimes;
@@ -50,6 +53,8 @@ TimeHM getNextBellLocal(
 );
 
 void loadBellsFromFirebase();
+void loadLightingConfigFromFirebase();
+void loadIrrigationConfigFromFirebase();
 void refreshNextBell();
 void addNormalBellLocal(const BellNormalSchedule& newBell);
 void addSpecialPeriodLocal(const BellSpecialPeriod& newPeriod);
@@ -57,6 +62,23 @@ void updateLighting();
 void updateIrrigation();
 void updateBell();
 OperationMode parseOperationMode(const String& mode);
+
+// ================= CALLBACKS POUR LES CHANGEMENTS FIREBASE =================
+
+void onLightingConfigChanged() {
+    Serial.println("📡 Configuration ÉCLAIRAGE modifiée - Rechargement...");
+    loadLightingConfigFromFirebase();
+}
+
+void onIrrigationConfigChanged() {
+    Serial.println("📡 Configuration IRRIGATION modifiée - Rechargement...");
+    loadIrrigationConfigFromFirebase();
+}
+
+void onBellsConfigChanged() {
+    Serial.println("📡 Configuration SONNERIES modifiée - Rechargement...");
+    loadBellsFromFirebase();
+}
 
 // ================= Recalcul et affichage du prochain bell =================
 void refreshNextBell() {
@@ -157,19 +179,77 @@ TimeHM getNextBellLocal(
     return nextBell;
 }
 
+// ================= Charger la config ÉCLAIRAGE depuis Firebase =================
+void loadLightingConfigFromFirebase() {
+    Serial.println("🔄 Chargement config ÉCLAIRAGE...");
+    
+    String mode = FirebaseService::getLightingMode();
+    if(mode.length() > 0) currentMode = mode;
+    delay(200);
+    
+    if(currentMode == "MANUAL") {
+        FirebaseService::getManualSchedule(manualStartTime, manualEndTime);
+        delay(200);
+        Serial.printf("   Mode: MANUAL (%s → %s)\n", manualStartTime.c_str(), manualEndTime.c_str());
+    } else if(currentMode == "SUNSET_SUNRISE") {
+        String subMode = FirebaseService::getSolarSubMode();
+        if(subMode.length() > 0) currentSolarSubMode = subMode;
+        delay(200);
+        
+        int delay_val = FirebaseService::getSolarDelay();
+        if(delay_val >= 0) currentSolarDelay = delay_val;
+        delay(200);
+        Serial.printf("   Mode: SUNSET_SUNRISE (SubMode: %s, Delay: %d min)\n", 
+                     currentSolarSubMode.c_str(), currentSolarDelay);
+    }
+    
+    Serial.println("✅ Config ÉCLAIRAGE chargée");
+}
+
+// ================= Charger la config IRRIGATION depuis Firebase =================
+void loadIrrigationConfigFromFirebase() {
+    Serial.println("🔄 Chargement config IRRIGATION...");
+    
+    String irrigMode = FirebaseService::getIrrigationMode();
+    if(irrigMode.length() > 0) irrigationMode = irrigMode;
+    delay(200);
+    
+    if(irrigationMode == "MANUAL") {
+        FirebaseService::getIrrigationManualSchedule(irrigationManualStart, irrigationManualEnd);
+        delay(200);
+        Serial.printf("   Mode: MANUAL (%s → %s)\n", irrigationManualStart.c_str(), irrigationManualEnd.c_str());
+    } else if(irrigationMode == "SUNSET_SUNRISE") {
+        String subMode = FirebaseService::getIrrigationSolarSubMode();
+        if(subMode.length() > 0) irrigationSolarSubMode = subMode;
+        delay(200);
+        
+        int delay_val = FirebaseService::getIrrigationSolarDelay();
+        if(delay_val >= 0) irrigationSolarDelay = delay_val;
+        delay(200);
+        Serial.printf("   Mode: SUNSET_SUNRISE (SubMode: %s, Delay: %d min)\n", 
+                     irrigationSolarSubMode.c_str(), irrigationSolarDelay);
+    }
+    
+    Serial.println("✅ Config IRRIGATION chargée");
+}
+
 // ================= Charger les bells depuis Firebase =================
 void loadBellsFromFirebase() {
     Serial.println("\n╔════════════════════════════════════════╗");
-    Serial.println("║  🔍 DIAGNOSTIC CHARGEMENT SONNERIES  ║");
+    Serial.println("║  🔍 CHARGEMENT SONNERIES              ║");
     Serial.println("╚════════════════════════════════════════╝\n");
     
     String normalJson = FirebaseService::getNormalBells();
+    delay(200);
+    
     BellFirebaseAdapter::loadNormalSchedules(normalJson, normalSchedule, normalCount);
 
     String specialJson = FirebaseService::getSpecialBells();
+    delay(200);
+    
     BellFirebaseAdapter::loadSpecialPeriods(specialJson, specialPeriods, specialCount);
 
-    refreshNextBell(); // 🔹 initialisation de la prochaine sonnerie
+    refreshNextBell();
 }
 
 // ================= SONNERIE =================
@@ -200,25 +280,16 @@ void updateBell() {
 
 // ================= ÉCLAIRAGE =================
 void updateLighting() {
-    String modeFromFirebase = FirebaseService::getLightingMode();
-    if(modeFromFirebase.length() > 0) currentMode = modeFromFirebase;
-
     TimeHM now = NTPUtils::now();
     int currentMinutes = now.hour*60 + now.minute;
 
     if(currentMode=="MANUAL"){
-        FirebaseService::getManualSchedule(manualStartTime, manualEndTime);
         int startMinutes = manualStartTime.substring(0,2).toInt()*60 + manualStartTime.substring(3,5).toInt();
         int endMinutes = manualEndTime.substring(0,2).toInt()*60 + manualEndTime.substring(3,5).toInt();
         lightingState = (startMinutes <= endMinutes) ?
             (currentMinutes >= startMinutes && currentMinutes < endMinutes) :
             (currentMinutes >= startMinutes || currentMinutes < endMinutes);
     } else if(currentMode=="SUNSET_SUNRISE"){
-        String subMode = FirebaseService::getSolarSubMode();
-        if(subMode.length()>0) currentSolarSubMode = subMode;
-        int delay = FirebaseService::getSolarDelay();
-        if(delay >=0) currentSolarDelay = delay;
-
         sunTimes.sunset = SunCalculator::getSunset();
         sunTimes.sunrise = SunCalculator::getSunrise();
 
@@ -236,30 +307,20 @@ void updateLighting() {
         else if(currentSolarSubMode=="AFTER_SUNRISE") lightingState = (currentMinutes>=sunsetMinutes || currentMinutes<afterSunrise);
     }
     digitalWrite(LED_PIN, lightingState ? HIGH : LOW);
-    FirebaseService::setLightingState(lightingState?"on":"off");
 }
 
 // ================= IRRIGATION =================
 void updateIrrigation() {
-    String modeFromFirebase = FirebaseService::getIrrigationMode();
-    if(modeFromFirebase.length()>0) irrigationMode = modeFromFirebase;
-
     TimeHM now = NTPUtils::now();
     int currentMinutes = now.hour*60 + now.minute;
 
     if(irrigationMode=="MANUAL"){
-        FirebaseService::getIrrigationManualSchedule(irrigationManualStart, irrigationManualEnd);
         int startMinutes = irrigationManualStart.substring(0,2).toInt()*60 + irrigationManualStart.substring(3,5).toInt();
         int endMinutes = irrigationManualEnd.substring(0,2).toInt()*60 + irrigationManualEnd.substring(3,5).toInt();
         irrigationState = (startMinutes <= endMinutes) ?
             (currentMinutes >= startMinutes && currentMinutes < endMinutes) :
             (currentMinutes >= startMinutes || currentMinutes < endMinutes);
     } else if(irrigationMode=="SUNSET_SUNRISE"){
-        String subMode = FirebaseService::getIrrigationSolarSubMode();
-        if(subMode.length()>0) irrigationSolarSubMode = subMode;
-        int delay = FirebaseService::getIrrigationSolarDelay();
-        if(delay>=0) irrigationSolarDelay = delay;
-
         sunTimes.sunset = SunCalculator::getSunset();
         sunTimes.sunrise = SunCalculator::getSunrise();
 
@@ -278,7 +339,6 @@ void updateIrrigation() {
     }
 
     digitalWrite(IRRIGATION_PIN, irrigationState ? HIGH : LOW);
-    FirebaseService::setIrrigationState(irrigationState?"on":"off");
 }
 
 // ================= SETUP =================
@@ -294,51 +354,95 @@ void setup() {
     digitalWrite(IRRIGATION_PIN, LOW);
     digitalWrite(BELL_PIN, LOW);
 
+    // 🔹 CONNEXION WIFI
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    while(WiFi.status()!=WL_CONNECTED){delay(500); Serial.print(".");}
+    while(WiFi.status()!=WL_CONNECTED){
+        delay(500); 
+        Serial.print(".");
+    }
     Serial.println("\nWiFi connecté");
+    Serial.print("🧠 Mémoire libre : ");
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(" bytes");
 
-    NTPUtils::init(3600,0);
-    SunCalculator::init(36.81897,10.16579);
-    FirebaseService::begin(FIREBASE_API_KEY,FIREBASE_DATABASE_URL);
+    // 🔹 SYNCHRONISATION NTP
+    Serial.println("⏰ Synchronisation NTP...");
+    configTime(3600, 3600, "fr.pool.ntp.org", "pool.ntp.org");
+    
+    time_t maintenant = time(nullptr);
+    int tentatives = 0;
+    while (maintenant < 8 * 3600 * 2 && tentatives < 20) {
+        delay(500);
+        Serial.print(".");
+        maintenant = time(nullptr);
+        tentatives++;
+    }
+    
+    if(maintenant < 8 * 3600 * 2) {
+        Serial.println("\n⚠️ Échec synchronisation NTP");
+    } else {
+        struct tm infoTemps;
+        gmtime_r(&maintenant, &infoTemps);
+        Serial.print("\n✅ Heure synchronisée : ");
+        Serial.println(asctime(&infoTemps));
+    }
 
-    loadBellsFromFirebase(); // 🔹 chargement initial des alarms
+    // 🔹 Initialiser NTPUtils et SunCalculator
+    NTPUtils::init(3600, 0);
+    SunCalculator::init(36.81897, 10.16579);
+    
+    // 🔹 Initialisation Firebase
+    Serial.println("🔥 Initialisation Firebase...");
+    FirebaseService::begin(FIREBASE_API_KEY, FIREBASE_DATABASE_URL);
+
+    // 🔹 Chargement initial de la configuration
+    delay(1000);
+    loadLightingConfigFromFirebase();
+    delay(500);
+    loadIrrigationConfigFromFirebase();
+    delay(500);
+    loadBellsFromFirebase();
+    
+    // 🔹 DÉMARRAGE DES LISTENERS EN TEMPS RÉEL
+    Serial.println("\n🎧 Configuration des callbacks...");
+    FirebaseService::setLightingConfigCallback(onLightingConfigChanged);
+    FirebaseService::setIrrigationConfigCallback(onIrrigationConfigChanged);
+    FirebaseService::setBellsConfigCallback(onBellsConfigChanged);
+    
+    delay(500);
+    FirebaseService::startListeners();
+    
+    Serial.println("\n✅ SYSTÈME INITIALISÉ - MODE TEMPS RÉEL ACTIF\n");
 }
 
 // ================= LOOP =================
-unsigned long lastFirebaseCheck = 0;
-const unsigned long FIREBASE_REFRESH_INTERVAL = 30000; // 60 secondes
+unsigned long lastStateUpdate = 0;
+const unsigned long STATE_UPDATE_INTERVAL = 10000; // 10 secondes
 
 void loop() {
-    // 🔹 Met à jour l'éclairage et l'irrigation
+    // 🔹 GESTION DES STREAMS EN TEMPS RÉEL (PRIORITAIRE)
+    FirebaseService::handleStreams();
+    
+    // 🔹 Mise à jour des systèmes
     updateLighting();
     updateIrrigation();
-
-    // 🔹 Met à jour les sonneries
     updateBell();
 
-    // 🔹 Vérification Firebase toutes les 60 secondes
     unsigned long nowMillis = millis();
-    if(nowMillis - lastFirebaseCheck > FIREBASE_REFRESH_INTERVAL) {
-        lastFirebaseCheck = nowMillis;
-        Serial.println("\n🔄 Vérification des nouvelles sonneries sur Firebase...");
-        loadBellsFromFirebase();
-
-        // Affichage de la prochaine sonnerie après recharge
-        TimeHM now = NTPUtils::now();
-        TimeHM nextBell = getNextBellLocal(now, normalSchedule, normalCount, specialPeriods, specialCount);
-        if(nextBell.hour != -1 && !(nextBell.hour == 0 && nextBell.minute == 0)) {
-            Serial.printf("   ⏭️  Prochaine sonnerie mise à jour : %02d:%02d\n", nextBell.hour, nextBell.minute);
-        } else {
-            Serial.println("   ⚠️  Aucune sonnerie programmée (vérifier Firebase)");
-        }
-        Serial.println("═══════════════════════════════════════\n");
+    
+    // 🔹 Envoyer l'état à Firebase
+    if(nowMillis - lastStateUpdate > STATE_UPDATE_INTERVAL) {
+        lastStateUpdate = nowMillis;
+        FirebaseService::setLightingState(lightingState?"on":"off");
+        delay(200);
+        FirebaseService::setIrrigationState(irrigationState?"on":"off");
+        delay(200);
     }
 
     // 🔹 Affichage état global toutes les 5 secondes
     static unsigned long lastDisplay = 0;
     if(millis() - lastDisplay < 5000 && !bellIsRinging) {
-        delay(1000);
+        delay(100); // Petit délai pour ne pas saturer
         return;
     }
     lastDisplay = millis();
@@ -346,14 +450,14 @@ void loop() {
     TimeHM now = NTPUtils::now();
 
     Serial.println("\n╔═══════════════════════════════════════╗");
-    Serial.println("║   SYSTÈME - ÉTAT GLOBAL              ║");
+    Serial.println("║   SYSTÈME - MODE TEMPS RÉEL          ║");
     Serial.println("╚═══════════════════════════════════════╝");
 
     // ÉCLAIRAGE
     Serial.println("\n💡 ÉCLAIRAGE");
     Serial.printf("   État : %s | Mode : %s\n", lightingState?"ON 💡":"OFF 🌑", currentMode.c_str());
     if(currentMode=="MANUAL") Serial.printf("   Horaires: %s → %s\n", manualStartTime.c_str(), manualEndTime.c_str());
-    else Serial.printf("☀️ Horaires solaires\n   Lever : %02d:%02d | Coucher : %02d:%02d\n   SubMode : %s | Delay : %d min\n",
+    else Serial.printf("   ☀️ Horaires solaires\n   Lever : %02d:%02d | Coucher : %02d:%02d\n   SubMode : %s | Delay : %d min\n",
         sunTimes.sunrise.hour, sunTimes.sunrise.minute, sunTimes.sunset.hour, sunTimes.sunset.minute, currentSolarSubMode.c_str(), currentSolarDelay);
 
     // IRRIGATION
@@ -361,7 +465,7 @@ void loop() {
     Serial.printf("   État : %s | Mode : %s\n", irrigationState?"ON 💧":"OFF 🚫", irrigationMode.c_str());
     if(irrigationMode=="MANUAL") Serial.printf("   Horaires: %s → %s\n", irrigationManualStart.c_str(), irrigationManualEnd.c_str());
 
-    // SONNERIE - Affichage simplifié
+    // SONNERIE
     Serial.println("\n🔔 SONNERIE");
     if(bellIsRinging) {
         Serial.printf("   🔊 EN COURS (depuis %lu sec)\n", (millis() - bellStartTime)/1000);
@@ -371,7 +475,7 @@ void loop() {
     if(nextBell.hour != -1 && !(nextBell.hour == 0 && nextBell.minute == 0)) {
         Serial.printf("   ⏭️  Prochaine sonnerie : %02d:%02d\n", nextBell.hour, nextBell.minute);
     } else {
-        Serial.println("   ⚠️  Aucune sonnerie programmée (vérifier Firebase)");
+        Serial.println("   ⚠️  Aucune sonnerie programmée");
     }
 
     Serial.println("\n═══════════════════════════════════════\n");
