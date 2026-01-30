@@ -2,7 +2,9 @@ import { onValue, push, ref, remove, update } from 'firebase/database';
 import { useEffect, useState } from 'react';
 import { database } from '../firebase/config.js';
 
+
 /* ===================== TYPES ===================== */
+
 
 export type NormalBell = {
   id: string;
@@ -12,6 +14,7 @@ export type NormalBell = {
   enabled: boolean;
   days: string[];
 };
+
 
 export type SpecialBell = {
   id: string;
@@ -23,18 +26,22 @@ export type SpecialBell = {
   endDate: string;
 };
 
+
 export type NextBell = {
   label: string;
   time: string;
   type: 'normal' | 'special';
 };
 
+
 /* ===================== HOOK ===================== */
+
 
 export function useBell() {
   const [normalBells, setNormalBells] = useState<NormalBell[]>([]);
   const [specialBells, setSpecialBells] = useState<SpecialBell[]>([]);
   const [nextBell, setNextBell] = useState<NextBell | null>(null);
+
 
   /* 🔹 READ NORMAL BELLS */
   useEffect(() => {
@@ -53,6 +60,7 @@ export function useBell() {
     });
   }, []);
 
+
   /* 🔹 READ SPECIAL BELLS */
   useEffect(() => {
     const specialRef = ref(database, 'bells/special');
@@ -70,6 +78,7 @@ export function useBell() {
     });
   }, []);
 
+
   /* 🔹 SYNC NORMAL BELLS */
   const syncNormalBells = (bells: NormalBell[]) => {
     const updates: any = {};
@@ -85,6 +94,7 @@ export function useBell() {
     update(ref(database, 'bells/normal'), updates);
     setNormalBells(bells);
   };
+
 
   /* 🔹 SYNC SPECIAL BELLS */
   const syncSpecialBells = (bells: SpecialBell[]) => {
@@ -103,23 +113,28 @@ export function useBell() {
     setSpecialBells(bells);
   };
 
+
   /* 🔹 ADD / DELETE */
   const addNormalBell = async (bell: Omit<NormalBell, 'id'>) => {
     const newRef = push(ref(database, 'bells/normal'), bell);
     return newRef.key as string;
   };
 
+
   const addSpecialBell = async (bell: Omit<SpecialBell, 'id'>) => {
     const newRef = push(ref(database, 'bells/special'), bell);
     return newRef.key as string;
   };
 
+
   const deleteNormalBell = (id: string) => remove(ref(database, `bells/normal/${id}`));
   const deleteSpecialBell = (id: string) => remove(ref(database, `bells/special/${id}`));
+
 
   /* 🔹 CALCULATE NEXT BELL */
   useEffect(() => {
     const now = new Date();
+
 
     // 🔹 Fonction utilitaire pour obtenir prochaine alarme la plus proche
     const getNext = () => {
@@ -133,16 +148,20 @@ export function useBell() {
         .filter(b => b.time > now)
         .sort((a, b) => a.time.getTime() - b.time.getTime());
 
+
       const upcomingSpecials = specialBells
         .filter(b => b.enabled)
         .map(b => ({ ...b, time: new Date(b.startDate) }))
         .filter(b => b.time > now)
         .sort((a, b) => a.time.getTime() - b.time.getTime());
 
+
       let next: NextBell | null = null;
+
 
       const nextNormal = upcomingNormals[0];
       const nextSpecial = upcomingSpecials[0];
+
 
       if (nextNormal && (!nextSpecial || nextNormal.time < nextSpecial.time)) {
         next = {
@@ -158,11 +177,14 @@ export function useBell() {
         };
       }
 
+
       return next;
     };
 
+
     setNextBell(getNext());
   }, [normalBells, specialBells]);
+
 
   return {
     normalBells,
@@ -176,3 +198,8 @@ export function useBell() {
     deleteSpecialBell,
   };
 }
+
+
+
+
+

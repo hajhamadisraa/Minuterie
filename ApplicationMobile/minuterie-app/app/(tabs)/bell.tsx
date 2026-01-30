@@ -177,8 +177,8 @@ export default function BellScreen() {
 
   // Next bell display
   const nextBellStatus = nextBell
-    ? `Next Bell: ${nextBell.label} at ${nextBell.time} (${nextBell.type})`
-    : 'No upcoming bell';
+    ? `⏭️ Next bell at ${nextBell.time} — ${nextBell.label}`
+    : '⚠️ No upcoming bell';
 
   return (
     <View style={styles.container}>
@@ -200,8 +200,10 @@ export default function BellScreen() {
       </View>
 
       {/* Next Bell */}
-      <View style={styles.nextBellBox}>
-        <Text style={styles.nextBellText}>{nextBellStatus}</Text>
+      <View style={[styles.nextBellBox, !nextBell && styles.nextBellBoxWarning]}>
+        <Text style={[styles.nextBellText, !nextBell && styles.nextBellTextWarning]}>
+          {nextBellStatus}
+        </Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
@@ -376,7 +378,6 @@ export default function BellScreen() {
   );
 }
 
-// Styles inchangés
 const styles = StyleSheet.create({
   container:{flex:1,backgroundColor:'#F9FAFB'},
   topBar:{padding:16,borderBottomWidth:1,borderBottomColor:'#E5E7EB',flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
@@ -418,19 +419,24 @@ const styles = StyleSheet.create({
   confirmButton:{flex:1,backgroundColor:'#0d7fff',paddingVertical:12,borderRadius:8,alignItems:'center'},
   confirmButtonText:{fontWeight:'600',color:'#fff'},
   nextBellBox: {
-  padding: 12,
-  marginHorizontal: 16,
-  marginBottom: 12,
-  backgroundColor: '#e0f0ff',
-  borderRadius: 12,
-  alignItems: 'center',
-},
-nextBellText: {
-  fontSize: 14,
-  fontWeight: '600',
-  color: '#0d7fff',
-},
-
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    backgroundColor: '#e0f0ff',
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  nextBellBoxWarning: {
+    backgroundColor: '#fff3cd',
+  },
+  nextBellText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0d7fff',
+  },
+  nextBellTextWarning: {
+    color: '#856404',
+  },
   addButton:{position:'absolute',bottom:32,right:32,width:56,height:56,borderRadius:28,backgroundColor:'#0d7fff',justifyContent:'center',alignItems:'center',elevation:5},
   addButtonText:{fontSize:32,color:'#fff',lineHeight:32}
 });

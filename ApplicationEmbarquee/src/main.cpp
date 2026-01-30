@@ -40,8 +40,10 @@ int specialCount = 0;
 
 bool bellIsRinging = false;
 unsigned long bellStartTime = 0;
-const unsigned long BELL_DURATION = 10000;
+const unsigned long BELL_DURATION = 10000; // 10 secondes
 int lastCheckedMinute = -1;
+bool bellJustFinished = false;
+unsigned long bellFinishTime = 0;
 
 SunTimes sunTimes;
 
@@ -255,11 +257,14 @@ void loadBellsFromFirebase() {
 // ================= SONNERIE =================
 void updateBell() {
     TimeHM now = NTPUtils::now();
+    unsigned long currentMillis = millis();
 
     // Arrêt de la sonnerie après durée
-    if(bellIsRinging && millis()-bellStartTime >= BELL_DURATION){
+    if(bellIsRinging && (currentMillis - bellStartTime) >= BELL_DURATION){
         digitalWrite(BELL_PIN, LOW);
         bellIsRinging = false;
+        bellJustFinished = true;
+        bellFinishTime = currentMillis;
         Serial.printf("\n🔕 SONNERIE TERMINÉE à %02d:%02d\n", now.hour, now.minute);
         refreshNextBell();
     }
@@ -271,9 +276,9 @@ void updateBell() {
         if(shouldRing){
             digitalWrite(BELL_PIN, HIGH);
             bellIsRinging = true;
-            bellStartTime = millis();
+            bellStartTime = currentMillis;
+            bellJustFinished = false;
             Serial.printf("\n🔔 SONNERIE DÉCLENCHÉE à %02d:%02d\n", now.hour, now.minute);
-            refreshNextBell();
         }
     }
 }
@@ -439,10 +444,12 @@ void loop() {
         delay(200);
     }
 
-    // 🔹 Affichage état global toutes les 5 secondes
+    // 🔹 Affichage état global toutes les secondes pendant la sonnerie, sinon toutes les 5 secondes
     static unsigned long lastDisplay = 0;
-    if(millis() - lastDisplay < 5000 && !bellIsRinging) {
-        delay(100); // Petit délai pour ne pas saturer
+    unsigned long displayInterval = bellIsRinging ? 1000 : 5000; // 1s pendant sonnerie, 5s sinon
+    
+    if(millis() - lastDisplay < displayInterval) {
+        delay(100);
         return;
     }
     lastDisplay = millis();
@@ -468,7 +475,8 @@ void loop() {
     // SONNERIE
     Serial.println("\n🔔 SONNERIE");
     if(bellIsRinging) {
-        Serial.printf("   🔊 EN COURS (depuis %lu sec)\n", (millis() - bellStartTime)/1000);
+        unsigned long elapsedSeconds = (millis() - bellStartTime) / 1000;
+        Serial.printf("   🔊 EN COURS (depuis %lu sec)\n", elapsedSeconds);
     }
     
     TimeHM nextBell = getNextBellLocal(now, normalSchedule, normalCount, specialPeriods, specialCount);
