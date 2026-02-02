@@ -1,441 +1,564 @@
 #include "FirebaseService.h"
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
+#include <ArduinoJson.h>
 
-FirebaseData firebaseData;
-FirebaseAuth auth;
-FirebaseConfig config;
+// =====================================================
+// OBJETS FIREBASE INTERNES
+// =====================================================
+FirebaseData fbData;
+FirebaseData streamLighting, streamIrrigation, streamBells;
+FirebaseAuth fbAuth;
+FirebaseConfig fbConfig;
 
-// Objets stream statiques
-FirebaseData FirebaseService::streamLighting;
-FirebaseData FirebaseService::streamIrrigation;
-FirebaseData FirebaseService::streamBells;
+// =====================================================
+// CALLBACKS INTERNES
+// =====================================================
+static std::function<void(String)> lightingCb = nullptr;
+static std::function<void(String)> irrigationCb = nullptr;
+static std::function<void(String)> bellsCb = nullptr;
 
-// Callbacks statiques
-ConfigChangeCallback FirebaseService::onLightingChange = nullptr;
-ConfigChangeCallback FirebaseService::onIrrigationChange = nullptr;
-ConfigChangeCallback FirebaseService::onBellsChange = nullptr;
+// =====================================================
+// VARIABLES INTERNES
+// =====================================================
+static String lastError = "";
+static bool firebaseReady = false;
+
+// =====================================================
+// INITIALISATION
+// =====================================================
 
 void FirebaseService::begin(const char* apiKey, const char* databaseURL) {
-    config.api_key = apiKey;
-    config.database_url = databaseURL;
+    Serial.println("🔥 Initialisation FirebaseService...");
     
-    // 🔹 CONFIGURATION DES TIMEOUTS SSL
-    config.timeout.serverResponse = 15 * 1000;
-    config.timeout.socketConnection = 15 * 1000;  
-    config.timeout.sslHandshake = 60 * 1000;
-    config.timeout.rtdbKeepAlive = 45 * 1000;
-    config.timeout.rtdbStreamReconnect = 1 * 1000;
-    config.timeout.rtdbStreamError = 3 * 1000;
+    fbConfig.api_key = apiKey;
+    fbConfig.database_url = databaseURL;
     
-    config.cert.data = nullptr;
+    // Configuration timeouts et retry
+    fbConfig.timeout.serverResponse = 10 * 1000; // 10 secondes
+    fbConfig.timeout.socketConnection = 10 * 1000;
     
-    Serial.print("API Key: ");
-    Serial.println(apiKey);
-    Serial.print("Database URL: ");
-    Serial.println(databaseURL);
+    Serial.println("🔐 Tentative d'authentification...");
     
-    Firebase.begin(&config, &auth);
-    Firebase.reconnectWiFi(true);
-    
-    Serial.println("Firebase initialisé - Attente du token...");
-    delay(2000);
-    
-    Serial.println("Tentative de signup anonyme...");
-    if (Firebase.signUp(&config, &auth, "", "")) {
-        Serial.println("✓ Authentification anonyme réussie");
+    if (Firebase.signUp(&fbConfig, &fbAuth, "", "")) {
+        Serial.println("✅ Firebase Auth OK");
+        firebaseReady = true;
+        
+        Firebase.begin(&fbConfig, &fbAuth);
+        Firebase.reconnectWiFi(true);
+        
+        // Configuration additionnelle
+        fbConfig.signer.tokens.legacy_token = "";
+        
+        Serial.println("✅ Firebase configuré avec succès");
     } else {
-        Serial.print("⚠ Erreur signup: ");
-        Serial.println(config.signer.signupError.message.c_str());
-    }
-    
-    Serial.println("Attente du token...");
-    unsigned long timeout = millis();
-    while (!Firebase.ready() && (millis() - timeout) < 30000) {
-        delay(500);
-        Serial.print(".");
-    }
-    
-    if (Firebase.ready()) {
-        Serial.println("\n✓ Firebase prêt!");
-    } else {
-        Serial.println("\n✗ Timeout - Firebase non prêt");
+        lastError = fbConfig.signer.signupError.message.c_str();
+        Serial.printf("❌ Erreur Auth: %s\n", lastError.c_str());
+        firebaseReady = false;
     }
 }
 
-// ==================== GESTION DES CALLBACKS ====================
+// =====================================================
+// GESTION DES FLUX (STREAMS)
+// =====================================================
 
-void FirebaseService::setLightingConfigCallback(ConfigChangeCallback callback) {
-    onLightingChange = callback;
+void FirebaseService::setLightingConfigCallback(std::function<void(String)> cb) { 
+    lightingCb = cb; 
 }
 
-void FirebaseService::setIrrigationConfigCallback(ConfigChangeCallback callback) {
-    onIrrigationChange = callback;
+void FirebaseService::setIrrigationConfigCallback(std::function<void(String)> cb) { 
+    irrigationCb = cb; 
 }
 
-void FirebaseService::setBellsConfigCallback(ConfigChangeCallback callback) {
-    onBellsChange = callback;
+void FirebaseService::setBellsConfigCallback(std::function<void(String)> cb) { 
+    bellsCb = cb; 
 }
-
-// ==================== STREAM TIMEOUT CALLBACK ====================
-
-void FirebaseService::streamTimeoutCallback(bool timeout) {
-    if (timeout) {
-        Serial.println("⚠ Stream timeout, reconnexion automatique...");
-    }
-}
-
-// ==================== DÉMARRAGE DES LISTENERS ====================
 
 void FirebaseService::startListeners() {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt pour démarrer les listeners");
+    if (!firebaseReady) {
+        Serial.println("⚠️  Firebase non prêt - listeners non démarrés");
         return;
     }
     
-    Serial.println("\n🎧 DÉMARRAGE DES LISTENERS EN TEMPS RÉEL");
+    Serial.println("📡 Démarrage des écouteurs Firebase...");
     
-    // 🔹 LISTENER ÉCLAIRAGE - Écoute TOUT le nœud lighting
-    // Cela inclut: mode, state, schedules/manual, schedules/sunset_to_sunrise
     if (!Firebase.RTDB.beginStream(&streamLighting, "lighting")) {
-        Serial.print("❌ Échec stream lighting: ");
-        Serial.println(streamLighting.errorReason());
+        Serial.println("❌ Échec stream lighting");
+        lastError = fbData.errorReason();
     } else {
-        Serial.println("✅ Listener ÉCLAIRAGE démarré sur /lighting");
+        Serial.println("  ✓ Stream lighting OK");
     }
     
-    delay(300);
-    
-    // 🔹 LISTENER IRRIGATION - Écoute TOUT le nœud irrigation
     if (!Firebase.RTDB.beginStream(&streamIrrigation, "irrigation")) {
-        Serial.print("❌ Échec stream irrigation: ");
-        Serial.println(streamIrrigation.errorReason());
+        Serial.println("❌ Échec stream irrigation");
+        lastError = fbData.errorReason();
     } else {
-        Serial.println("✅ Listener IRRIGATION démarré sur /irrigation");
+        Serial.println("  ✓ Stream irrigation OK");
     }
     
-    delay(300);
-    
-    // 🔹 LISTENER SONNERIES - Écoute TOUT le nœud bells
     if (!Firebase.RTDB.beginStream(&streamBells, "bells")) {
-        Serial.print("❌ Échec stream bells: ");
-        Serial.println(streamBells.errorReason());
+        Serial.println("❌ Échec stream bells");
+        lastError = fbData.errorReason();
     } else {
-        Serial.println("✅ Listener SONNERIES démarré sur /bells");
+        Serial.println("  ✓ Stream bells OK");
     }
     
-    Serial.println("═══════════════════════════════════════\n");
+    Serial.println("✅ Écouteurs Firebase démarrés");
 }
-
-// ==================== ARRÊT DES LISTENERS ====================
-
-void FirebaseService::stopListeners() {
-    Firebase.RTDB.endStream(&streamLighting);
-    Firebase.RTDB.endStream(&streamIrrigation);
-    Firebase.RTDB.endStream(&streamBells);
-    Serial.println("🔇 Tous les listeners arrêtés");
-}
-
-// ==================== GESTION DES STREAMS (À APPELER DANS LOOP) ====================
 
 void FirebaseService::handleStreams() {
-    if (!Firebase.ready()) return;
+    if (!firebaseReady) return;
     
-    // 🔹 VÉRIFIER LE STREAM ÉCLAIRAGE
+    // Stream Éclairage
     if (Firebase.RTDB.readStream(&streamLighting)) {
         if (streamLighting.streamAvailable()) {
-            // 🔍 DEBUG: Afficher le type de données reçues
-            String dataType = streamLighting.dataType();
-            String dataPath = streamLighting.dataPath();
-            
-            Serial.println("\n🔔 CHANGEMENT DÉTECTÉ : ÉCLAIRAGE");
-            Serial.print("   Type de données: ");
-            Serial.println(dataType);
-            Serial.print("   Chemin: ");
-            Serial.println(dataPath);
-            
-            // Déclencher le callback pour TOUS les types de changements
-            // (json, string, int, bool, etc.)
-            if (dataType.length() > 0) {
-                if (onLightingChange != nullptr) {
-                    onLightingChange();
-                }
+            if (lightingCb) {
+                lightingCb(streamLighting.jsonString());
             }
-        }
-        
-        if (streamLighting.streamTimeout()) {
-            streamTimeoutCallback(true);
         }
     }
     
-    // 🔹 VÉRIFIER LE STREAM IRRIGATION
+    // Stream Irrigation
     if (Firebase.RTDB.readStream(&streamIrrigation)) {
         if (streamIrrigation.streamAvailable()) {
-            String dataType = streamIrrigation.dataType();
-            String dataPath = streamIrrigation.dataPath();
-            
-            Serial.println("\n🔔 CHANGEMENT DÉTECTÉ : IRRIGATION");
-            Serial.print("   Type de données: ");
-            Serial.println(dataType);
-            Serial.print("   Chemin: ");
-            Serial.println(dataPath);
-            
-            if (dataType.length() > 0) {
-                if (onIrrigationChange != nullptr) {
-                    onIrrigationChange();
-                }
+            if (irrigationCb) {
+                irrigationCb(streamIrrigation.jsonString());
             }
-        }
-        
-        if (streamIrrigation.streamTimeout()) {
-            streamTimeoutCallback(true);
         }
     }
     
-    // 🔹 VÉRIFIER LE STREAM SONNERIES
+    // Stream Sonneries
     if (Firebase.RTDB.readStream(&streamBells)) {
         if (streamBells.streamAvailable()) {
-            String dataType = streamBells.dataType();
-            String dataPath = streamBells.dataPath();
-            
-            Serial.println("\n🔔 CHANGEMENT DÉTECTÉ : SONNERIES");
-            Serial.print("   Type de données: ");
-            Serial.println(dataType);
-            Serial.print("   Chemin: ");
-            Serial.println(dataPath);
-            
-            if (dataType.length() > 0) {
-                if (onBellsChange != nullptr) {
-                    onBellsChange();
-                }
+            if (bellsCb) {
+                bellsCb(streamBells.jsonString());
             }
         }
-        
-        if (streamBells.streamTimeout()) {
-            streamTimeoutCallback(true);
-        }
     }
 }
 
-// ==================== ÉCLAIRAGE (INCHANGÉ) ====================
-
-bool FirebaseService::setLightingState(const String& state) {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt");
-        return false;
-    }
-    
-    for(int i = 0; i < 2; i++) {
-        bool success = Firebase.RTDB.setString(&firebaseData, "lighting/state", state);
-        if (success) return true;
-        
-        if(i == 0) {
-            Serial.print("⚠ Retry écriture state (");
-            Serial.print(firebaseData.errorReason().c_str());
-            Serial.println(")");
-            delay(500);
-        }
-    }
-    
-    Serial.print("❌ Erreur écriture state: ");
-    Serial.println(firebaseData.errorReason().c_str());
-    return false;
-}
-
-bool FirebaseService::setLightingMode(const String& mode) {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt");
-        return false;
-    }
-    
-    bool success = Firebase.RTDB.setString(&firebaseData, "lighting/mode", mode);
-    if (!success) {
-        Serial.print("Erreur écriture mode: ");
-        Serial.println(firebaseData.errorReason().c_str());
-    }
-    return success;
-}
-
-String FirebaseService::getLightingState() {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt");
-        return "";
-    }
-    
-    if (Firebase.RTDB.getString(&firebaseData, "lighting/state")) {
-        return firebaseData.stringData();
-    } else {
-        Serial.print("Erreur lecture state: ");
-        Serial.println(firebaseData.errorReason().c_str());
-        return "";
-    }
-}
+// =====================================================
+// GETTERS ÉCLAIRAGE
+// =====================================================
 
 String FirebaseService::getLightingMode() {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt");
-        return "";
+    if (!firebaseReady) return "MANUAL";
+    
+    if (Firebase.RTDB.getString(&fbData, "lighting/mode")) {
+        return fbData.stringData();
     }
     
-    if (Firebase.RTDB.getString(&firebaseData, "lighting/mode")) {
-        return firebaseData.stringData();
-    } else {
-        Serial.print("Erreur lecture mode: ");
-        Serial.println(firebaseData.errorReason().c_str());
-        return "";
+    lastError = fbData.errorReason();
+    return "MANUAL";
+}
+
+String FirebaseService::getLightingDevicesJson() {
+    if (!firebaseReady) return "{}";
+    
+    if (Firebase.RTDB.getJSON(&fbData, "lighting/devices")) {
+        String json = fbData.jsonString();
+        
+        // Vérifier que ce n'est pas vide ou null
+        if (json.length() > 5 && json != "null") {
+            return json;
+        }
     }
+    
+    lastError = fbData.errorReason();
+    return "{}";
 }
 
 String FirebaseService::getSolarSubMode() {
-    if (!Firebase.ready()) {
-        return "";
+    if (!firebaseReady) return "SUNSET_TO_SUNRISE";
+    
+    if (Firebase.RTDB.getString(&fbData, "lighting/schedules/sunset_to_sunrise/subMode")) {
+        return fbData.stringData();
     }
     
-    if (Firebase.RTDB.getString(&firebaseData, "lighting/schedules/sunset_to_sunrise/subMode")) {
-        return firebaseData.stringData();
-    }
-    return "";
+    return "SUNSET_TO_SUNRISE";
 }
 
 int FirebaseService::getSolarDelay() {
-    if (!Firebase.ready()) {
-        return 0;
+    if (!firebaseReady) return 0;
+    
+    if (Firebase.RTDB.getInt(&fbData, "lighting/schedules/sunset_to_sunrise/delay")) {
+        return fbData.intData();
     }
     
-    if (Firebase.RTDB.getInt(&firebaseData, "lighting/schedules/sunset_to_sunrise/delay")) {
-        return firebaseData.intData();
-    }
     return 0;
+}
+
+String FirebaseService::getManualStartTime() {
+    if (!firebaseReady) return "18:30";
+    
+    if (Firebase.RTDB.getString(&fbData, "lighting/schedules/manual/startTime")) {
+        return fbData.stringData();
+    }
+    
+    return "18:30";
+}
+
+String FirebaseService::getManualEndTime() {
+    if (!firebaseReady) return "06:30";
+    
+    if (Firebase.RTDB.getString(&fbData, "lighting/schedules/manual/endTime")) {
+        return fbData.stringData();
+    }
+    
+    return "06:30";
 }
 
 void FirebaseService::getManualSchedule(String& startTime, String& endTime) {
-    if (!Firebase.ready()) {
+    if (!firebaseReady) {
+        startTime = "18:30";
+        endTime = "06:30";
         return;
     }
     
-    if (Firebase.RTDB.getString(&firebaseData, "lighting/schedules/manual/startTime")) {
-        startTime = firebaseData.stringData();
-    }
-    
-    if (Firebase.RTDB.getString(&firebaseData, "lighting/schedules/manual/endTime")) {
-        endTime = firebaseData.stringData();
-    }
+    startTime = getManualStartTime();
+    endTime = getManualEndTime();
 }
 
-// ==================== IRRIGATION (INCHANGÉ) ====================
-
-bool FirebaseService::setIrrigationState(const String& state) {
-    if (!Firebase.ready()) return false;
+String FirebaseService::getLightingDevice(const String& deviceId) {
+    if (!firebaseReady) return "{}";
     
-    for(int i = 0; i < 2; i++) {
-        bool success = Firebase.RTDB.setString(&firebaseData, "irrigation/state", state);
-        if (success) return true;
-        if(i == 0) delay(500);
+    // CLEAN APPROACH: Build string step by step
+    String path = "lighting/devices/";
+    path += deviceId;
+    
+    if (Firebase.RTDB.getJSON(&fbData, path.c_str())) {
+        return fbData.jsonString();
     }
+    
+    lastError = fbData.errorReason();
+    return "{}";
+}
+
+bool FirebaseService::setLightingDeviceActive(const String& deviceId, bool isActive) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "lighting/devices/";
+    path += deviceId;
+    path += "/isActive";
+    
+    if (Firebase.RTDB.setBool(&fbData, path.c_str(), isActive)) {
+        return true;
+    }
+    
+    lastError = fbData.errorReason();
     return false;
 }
 
-bool FirebaseService::setIrrigationMode(const String& mode) {
-    if (!Firebase.ready()) return false;
-    return Firebase.RTDB.setString(&firebaseData, "irrigation/mode", mode);
+bool FirebaseService::addLightingDevice(const String& deviceId, const String& name, 
+                                        int pin, bool isActive) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "lighting/devices/";
+    path += deviceId;
+    
+    // Créer JSON pour le nouveau dispositif
+    DynamicJsonDocument doc(512);
+    doc["name"] = name;
+    doc["pin"] = pin;
+    doc["isActive"] = isActive;
+    
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+    
+    // Use FirebaseJson object
+    FirebaseJson json;
+    json.setJsonData(jsonStr);
+    
+    if (Firebase.RTDB.setJSON(&fbData, path.c_str(), &json)) {
+        Serial.printf("✅ Dispositif ajouté: %s\n", name.c_str());
+        return true;
+    }
+    
+    lastError = fbData.errorReason();
+    Serial.printf("❌ Échec ajout dispositif: %s\n", lastError.c_str());
+    return false;
 }
 
-String FirebaseService::getIrrigationState() {
-    if (!Firebase.ready()) return "";
-    if (Firebase.RTDB.getString(&firebaseData, "irrigation/state")) {
-        return firebaseData.stringData();
+bool FirebaseService::removeLightingDevice(const String& deviceId) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "lighting/devices/";
+    path += deviceId;
+    
+    if (Firebase.RTDB.deleteNode(&fbData, path.c_str())) {
+        Serial.printf("✅ Dispositif supprimé: %s\n", deviceId.c_str());
+        return true;
     }
-    return "";
+    
+    lastError = fbData.errorReason();
+    return false;
 }
+
+// =====================================================
+// GETTERS IRRIGATION
+// =====================================================
 
 String FirebaseService::getIrrigationMode() {
-    if (!Firebase.ready()) return "";
-    if (Firebase.RTDB.getString(&firebaseData, "irrigation/mode")) {
-        return firebaseData.stringData();
+    if (!firebaseReady) return "MANUAL";
+    
+    if (Firebase.RTDB.getString(&fbData, "irrigation/mode")) {
+        return fbData.stringData();
     }
-    return "";
+    
+    return "MANUAL";
+}
+
+String FirebaseService::getIrrigationDevicesJson() {
+    if (!firebaseReady) return "{}";
+    
+    if (Firebase.RTDB.getJSON(&fbData, "irrigation/devices")) {
+        String json = fbData.jsonString();
+        
+        if (json.length() > 5 && json != "null") {
+            return json;
+        }
+    }
+    
+    lastError = fbData.errorReason();
+    return "{}";
 }
 
 String FirebaseService::getIrrigationSolarSubMode() {
-    if (!Firebase.ready()) return "";
-    if (Firebase.RTDB.getString(&firebaseData, "irrigation/schedules/sunset_to_sunrise/subMode")) {
-        return firebaseData.stringData();
+    if (!firebaseReady) return "BEFORE_SUNRISE";
+    
+    if (Firebase.RTDB.getString(&fbData, "irrigation/schedules/sunset_to_sunrise/subMode")) {
+        return fbData.stringData();
     }
-    return "";
+    
+    return "BEFORE_SUNRISE";
 }
 
 int FirebaseService::getIrrigationSolarDelay() {
-    if (!Firebase.ready()) return 0;
-    if (Firebase.RTDB.getInt(&firebaseData, "irrigation/schedules/sunset_to_sunrise/delay")) {
-        return firebaseData.intData();
+    if (!firebaseReady) return 0;
+    
+    if (Firebase.RTDB.getInt(&fbData, "irrigation/schedules/sunset_to_sunrise/delay")) {
+        return fbData.intData();
     }
+    
     return 0;
 }
 
-void FirebaseService::getIrrigationManualSchedule(String& startTime, String& endTime) {
-    if (!Firebase.ready()) return;
+String FirebaseService::getIrrigationManualStartTime() {
+    if (!firebaseReady) return "06:00";
     
-    if (Firebase.RTDB.getString(&firebaseData, "irrigation/schedules/manual/startTime")) {
-        startTime = firebaseData.stringData();
+    if (Firebase.RTDB.getString(&fbData, "irrigation/schedules/manual/startTime")) {
+        return fbData.stringData();
     }
     
-    if (Firebase.RTDB.getString(&firebaseData, "irrigation/schedules/manual/endTime")) {
-        endTime = firebaseData.stringData();
-    }
+    return "06:00";
 }
 
-// ==================== SONNERIES (BELLS) - INCHANGÉ ====================
-
-String FirebaseService::getNormalBells() {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt");
-        return "[]";
+String FirebaseService::getIrrigationManualEndTime() {
+    if (!firebaseReady) return "06:30";
+    
+    if (Firebase.RTDB.getString(&fbData, "irrigation/schedules/manual/endTime")) {
+        return fbData.stringData();
     }
     
-    if (Firebase.RTDB.getJSON(&firebaseData, "bells/normal")) {
-        String jsonStr = firebaseData.jsonString();
-        
-        Serial.println("─────────────────────────────────────────");
-        Serial.print("Longueur JSON: ");
-        Serial.print(jsonStr.length());
-        Serial.println(" caractères");
-        Serial.print("Contenu JSON: ");
-        Serial.println(jsonStr);
-        Serial.println("─────────────────────────────────────────");
-        
-        if (jsonStr.length() == 0 || jsonStr == "null" || jsonStr == "") {
-            Serial.println("❌ PROBLÈME: Firebase retourne un JSON vide/null!");
-            return "[]";
-        }
-        
-        return jsonStr;
-    } else {
-        Serial.print("❌ Erreur Firebase getNormalBells: ");
-        Serial.println(firebaseData.errorReason().c_str());
-        return "[]";
+    return "06:30";
+}
+
+void FirebaseService::getIrrigationManualSchedule(String& startTime, String& endTime) {
+    if (!firebaseReady) {
+        startTime = "06:00";
+        endTime = "06:30";
+        return;
     }
+    
+    startTime = getIrrigationManualStartTime();
+    endTime = getIrrigationManualEndTime();
+}
+
+String FirebaseService::getIrrigationDevice(const String& deviceId) {
+    if (!firebaseReady) return "{}";
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "irrigation/devices/";
+    path += deviceId;
+    
+    if (Firebase.RTDB.getJSON(&fbData, path.c_str())) {
+        return fbData.jsonString();
+    }
+    
+    lastError = fbData.errorReason();
+    return "{}";
+}
+
+bool FirebaseService::setIrrigationDeviceActive(const String& deviceId, bool isActive) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "irrigation/devices/";
+    path += deviceId;
+    path += "/isActive";
+    
+    if (Firebase.RTDB.setBool(&fbData, path.c_str(), isActive)) {
+        return true;
+    }
+    
+    lastError = fbData.errorReason();
+    return false;
+}
+
+bool FirebaseService::addIrrigationDevice(const String& deviceId, const String& name,
+                                          int pin, bool isActive) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "irrigation/devices/";
+    path += deviceId;
+    
+    DynamicJsonDocument doc(512);
+    doc["name"] = name;
+    doc["pin"] = pin;
+    doc["isActive"] = isActive;
+    
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+    
+    // Use FirebaseJson object
+    FirebaseJson json;
+    json.setJsonData(jsonStr);
+    
+    if (Firebase.RTDB.setJSON(&fbData, path.c_str(), &json)) {
+        Serial.printf("✅ Dispositif irrigation ajouté: %s\n", name.c_str());
+        return true;
+    }
+    
+    lastError = fbData.errorReason();
+    Serial.printf("❌ Échec ajout dispositif irrigation: %s\n", lastError.c_str());
+    return false;
+}
+
+bool FirebaseService::removeIrrigationDevice(const String& deviceId) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = "irrigation/devices/";
+    path += deviceId;
+    
+    if (Firebase.RTDB.deleteNode(&fbData, path.c_str())) {
+        Serial.printf("✅ Dispositif irrigation supprimé: %s\n", deviceId.c_str());
+        return true;
+    }
+    
+    lastError = fbData.errorReason();
+    return false;
+}
+
+// =====================================================
+// GETTERS SONNERIE
+// =====================================================
+
+String FirebaseService::getNormalBells() {
+    if (!firebaseReady) return "{}";
+    
+    if (Firebase.RTDB.getJSON(&fbData, "bells/normal")) {
+        String json = fbData.jsonString();
+        
+        if (json.length() > 5 && json != "null") {
+            return json;
+        }
+    }
+    
+    return "{}";
 }
 
 String FirebaseService::getSpecialBells() {
-    if (!Firebase.ready()) {
-        Serial.println("⚠ Firebase non prêt");
-        return "[]";
+    if (!firebaseReady) return "{}";
+    
+    if (Firebase.RTDB.getJSON(&fbData, "bells/special")) {
+        String json = fbData.jsonString();
+        
+        if (json.length() > 5 && json != "null") {
+            return json;
+        }
     }
     
-    if (Firebase.RTDB.getJSON(&firebaseData, "bells/special")) {
-        String jsonStr = firebaseData.jsonString();
-        
-        Serial.print("Longueur JSON: ");
-        Serial.print(jsonStr.length());
-        Serial.println(" caractères");
-        
-        if (jsonStr.length() == 0 || jsonStr == "null" || jsonStr == "") {
-            Serial.println("⚠ Aucune période spéciale trouvée");
-            return "[]";
-        }
-        
-        return jsonStr;
-    } else {
-        Serial.print("❌ Erreur Firebase getSpecialBells: ");
-        Serial.println(firebaseData.errorReason().c_str());
-        return "[]";
+    return "{}";
+}
+
+// =====================================================
+// SETTERS (RETOUR D'ÉTAT VERS APP)
+// =====================================================
+
+void FirebaseService::setLightingState(bool state) {
+    if (!firebaseReady) return;
+    
+    if (!Firebase.RTDB.setBool(&fbData, "lighting/state", state)) {
+        lastError = fbData.errorReason();
+        Serial.printf("⚠️  Erreur setLightingState: %s\n", lastError.c_str());
     }
+}
+
+void FirebaseService::setLightingState(const String& state) {
+    if (!firebaseReady) return;
+    
+    if (!Firebase.RTDB.setString(&fbData, "lighting/state", state)) {
+        lastError = fbData.errorReason();
+        Serial.printf("⚠️  Erreur setLightingState: %s\n", lastError.c_str());
+    }
+}
+
+void FirebaseService::setIrrigationState(bool state) {
+    if (!firebaseReady) return;
+    
+    if (!Firebase.RTDB.setBool(&fbData, "irrigation/state", state)) {
+        lastError = fbData.errorReason();
+        Serial.printf("⚠️  Erreur setIrrigationState: %s\n", lastError.c_str());
+    }
+}
+
+void FirebaseService::setIrrigationState(const String& state) {
+    if (!firebaseReady) return;
+    
+    if (!Firebase.RTDB.setString(&fbData, "irrigation/state", state)) {
+        lastError = fbData.errorReason();
+        Serial.printf("⚠️  Erreur setIrrigationState: %s\n", lastError.c_str());
+    }
+}
+
+void FirebaseService::setNextBellTime(const String& time) {
+    if (!firebaseReady) return;
+    
+    if (!Firebase.RTDB.setString(&fbData, "status/nextBell", time)) {
+        lastError = fbData.errorReason();
+    }
+}
+
+bool FirebaseService::setDeviceState(const String& category, const String& deviceId, bool state) {
+    if (!firebaseReady) return false;
+    
+    // CLEAN APPROACH: Build string step by step
+    String path = category;
+    path += "/devices/";
+    path += deviceId;
+    path += "/currentState";
+    
+    if (Firebase.RTDB.setBool(&fbData, path.c_str(), state)) {
+        return true;
+    }
+    
+    lastError = fbData.errorReason();
+    return false;
+}
+
+// =====================================================
+// UTILITAIRES
+// =====================================================
+
+bool FirebaseService::isReady() {
+    return firebaseReady && Firebase.ready();
+}
+
+String FirebaseService::getLastError() {
+    return lastError;
 }

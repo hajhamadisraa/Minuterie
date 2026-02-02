@@ -2,21 +2,15 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useState } from 'react';
 import {
   Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
-import { useLighting } from '../../hooks/useLighting';
-
-type SolarSubMode =
-  | 'SUNSET_TO_SUNRISE'
-  | 'BEFORE_SUNSET'
-  | 'AFTER_SUNSET'
-  | 'BEFORE_SUNRISE'
-  | 'AFTER_SUNRISE';
+import { SolarSubMode, useLighting } from '../../hooks/useLighting';
 
 export default function LightingSettings() {
   const {
@@ -26,229 +20,623 @@ export default function LightingSettings() {
     solarDelay,
     manualStart,
     manualEnd,
-    setState,
-    setMode,
-    setManualSchedule,
-    setSolarScheduleDelay,
-    setSolarSubMode,
+    devices = [],
+    updateMode,
+    updateManualSchedule,
+    updateSolarConfig,
+    addDevice,
+    toggleDeviceActive,
+    deleteDevice
   } = useLighting();
 
-  const [startTime, setStartTime] = useState(manualStart);
-  const [endTime, setEndTime] = useState(manualEnd);
+  // Local states for form and time pickers
+  const [newDeviceName, setNewDeviceName] = useState('');
+  const [newDevicePin, setNewDevicePin] = useState('');
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
 
-  const solarModes: { key: SolarSubMode; label: string; desc: string; icon: string }[] = [
-    { key: 'SUNSET_TO_SUNRISE', label: 'Sunset to Sunrise', desc: 'Lighting is ON during this interval', icon: '🌙' },
-    { key: 'BEFORE_SUNSET', label: 'Before Sunset', desc: 'Lighting is ON before sunset', icon: '🌅' },
-    { key: 'AFTER_SUNSET', label: 'After Sunset', desc: 'Lighting is ON after sunset', icon: '🌇' },
-    { key: 'BEFORE_SUNRISE', label: 'Before Sunrise', desc: 'Lighting is ON before sunrise', icon: '🌄' },
-    { key: 'AFTER_SUNRISE', label: 'After Sunrise', desc: 'Lighting is ON after sunrise', icon: '☀️' },
+  const solarModes: { key: SolarSubMode; label: string; icon: string; desc: string }[] = [
+    { key: 'SUNSET_TO_SUNRISE', label: 'Sunset to Sunrise', icon: '🌙', desc: 'On all night long' },
+    { key: 'BEFORE_SUNSET', label: 'Before Sunset', icon: '🌅', desc: 'On before sunset' },
+    { key: 'AFTER_SUNSET', label: 'After Sunset', icon: '🌇', desc: 'On after sunset' },
+    { key: 'BEFORE_SUNRISE', label: 'Before Sunrise', icon: '🌄', desc: 'On before sunrise' },
+    { key: 'AFTER_SUNRISE', label: 'After Sunrise', icon: '☀️', desc: 'On after sunrise' },
   ];
 
-  const requiresDelay = mode === 'SUNSET_SUNRISE';
-
-  const handleSave = () => {
-    setState(state);
-    setMode(mode);
-
-    if (mode === 'MANUAL') {
-      setManualSchedule(startTime, endTime);
-    } else {
-      setSolarScheduleDelay(solarDelay);
+  const handleAdd = () => {
+    const pin = parseInt(newDevicePin);
+    if (!newDeviceName.trim() || isNaN(pin)) {
+      Alert.alert("Error", "Please enter a valid name and GPIO pin number");
+      return;
     }
-
-    Alert.alert('Saved ✅', 'Configuration saved successfully');
+    addDevice(newDeviceName.trim(), pin);
+    setNewDeviceName('');
+    setNewDevicePin('');
+    Alert.alert("Success", "Device added and synchronized");
   };
 
-  const onChangeStart = (event: any, selectedDate?: Date) => {
-    setShowStartPicker(false);
-    if (selectedDate) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      const time = `${hours}:${minutes}`;
-      setStartTime(time);
-      setManualSchedule(time, endTime);
-    }
-  };
-
-  const onChangeEnd = (event: any, selectedDate?: Date) => {
-    setShowEndPicker(false);
-    if (selectedDate) {
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      const time = `${hours}:${minutes}`;
-      setEndTime(time);
-      setManualSchedule(startTime, time);
-    }
-  };
+  // ✅ Debug: Display state in console
+  React.useEffect(() => {
+    console.log('🔍 [LightingSettings] Current state:', state);
+  }, [state]);
 
   return (
     <View style={styles.container}>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <Text style={styles.headerTitle}>Lighting Settings</Text>
+      {/* HEADER */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Smart Lighting</Text>
       </View>
 
-      {/* Lighting Status */}
-      <View style={styles.statusCard}>
-        <Text style={styles.statusTitle}>Lighting Status</Text>
-        <View style={styles.statusRow}>
-          <Text style={styles.statusIcon}>💡</Text>
-          <Text style={[styles.statusText, state === 'on' ? styles.statusOn : styles.statusOff]}>
-            {state === 'on' ? 'ON' : 'OFF'}
-          </Text>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        
+        {/* ✅ GLOBAL STATUS CARD - ENHANCED */}
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>System Status</Text>
+          <View style={styles.statusBadge}>
+            <View style={[
+              styles.statusDot, 
+              { backgroundColor: state ? '#16A34A' : '#DC2626' }
+            ]} />
+            <Text style={[
+              styles.statusValue, 
+              { color: state ? '#16A34A' : '#DC2626' }
+            ]}>
+              {state ? 'SYSTEM ON' : 'SYSTEM OFF'}
+            </Text>
+          </View>
+          
+          {/* ✅ NEW: Additional visual indicator */}
+          <View style={[
+            styles.powerIndicator,
+            { backgroundColor: state ? '#16A34A' : '#DC2626' }
+          ]}>
+            <Text style={styles.powerIndicatorText}>
+              {state ? '⚡ ACTIVE' : '⭕ INACTIVE'}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {/* Mode Selector */}
-      <View style={styles.modeSelector}>
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'SUNSET_SUNRISE' && styles.active]}
-          onPress={() => setMode('SUNSET_SUNRISE')}
-        >
-          <Text style={mode === 'SUNSET_SUNRISE' ? styles.activeText : styles.text}>
-            SUNSET / SUNRISE
-          </Text>
-        </TouchableOpacity>
+        {/* MODE SELECTOR (TABS) */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity 
+            style={[styles.tab, mode === 'SUNSET_SUNRISE' && styles.tabActive]}
+            onPress={() => updateMode('SUNSET_SUNRISE')}
+          >
+            <Text style={[styles.tabText, mode === 'SUNSET_SUNRISE' && styles.tabTextActive]}>SOLAR</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, mode === 'MANUAL' && styles.tabActive]}
+            onPress={() => updateMode('MANUAL')}
+          >
+            <Text style={[styles.tabText, mode === 'MANUAL' && styles.tabTextActive]}>MANUAL</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.modeButton, mode === 'MANUAL' && styles.active]}
-          onPress={() => setMode('MANUAL')}
-        >
-          <Text style={mode === 'MANUAL' ? styles.activeText : styles.text}>Manual</Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.main} contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* Solar Mode */}
-        {mode === 'SUNSET_SUNRISE' && (
-          <View style={styles.cardContainer}>
-            {solarModes.map(item => (
-              <TouchableOpacity
-                key={item.key}
-                style={[styles.card, solarSubMode === item.key && styles.cardActive]}
-                onPress={() => setSolarSubMode(item.key)}
-              >
-                <Text style={styles.cardIcon}>{item.icon}</Text>
-                <View style={styles.cardText}>
-                  <Text style={styles.cardTitle}>{item.label}</Text>
-                  <Text style={styles.cardSubtitle}>{item.desc}</Text>
-                </View>
-                <Text style={styles.cardStatus}>{solarSubMode === item.key ? '✅' : '⚪'}</Text>
-              </TouchableOpacity>
-            ))}
-
-            {/* Delay global */}
-            {requiresDelay && (
-              <View style={styles.delayContainer}>
+        {/* ACTIVE MODE CONFIGURATION */}
+        <View style={styles.sectionCard}>
+          {mode === 'SUNSET_SUNRISE' ? (
+            <>
+              <Text style={styles.cardInfoTitle}>Solar Configuration</Text>
+              {solarModes.map(m => (
+                <TouchableOpacity 
+                  key={m.key} 
+                  style={[styles.card, solarSubMode === m.key && styles.cardActive]}
+                  onPress={() => updateSolarConfig(m.key, parseInt(solarDelay))}
+                >
+                  <Text style={styles.cardIcon}>{m.icon}</Text>
+                  <View style={styles.cardTextContainer}>
+                    <Text style={styles.cardTitle}>{m.label}</Text>
+                    <Text style={styles.cardSubtitle}>{m.desc}</Text>
+                  </View>
+                  <Text style={styles.cardStatus}>{solarSubMode === m.key ? '✅' : '⚪'}</Text>
+                </TouchableOpacity>
+              ))}
+              
+              <View style={styles.delayInputContainer}>
                 <Text style={styles.delayLabel}>Delay (minutes):</Text>
-                <TextInput
-                  style={styles.delayInput}
-                  value={solarDelay}
-                  onChangeText={text => setSolarScheduleDelay(text)}
-                  placeholder="0"
+                <TextInput 
+                  style={styles.delayInput} 
+                  value={String(solarDelay)}
+                  onChangeText={(t) => updateSolarConfig(solarSubMode, parseInt(t) || 0)}
                   keyboardType="numeric"
                 />
               </View>
-            )}
+            </>
+          ) : (
+            <>
+              <Text style={styles.cardInfoTitle}>Manual Schedule</Text>
+              <View style={styles.timeRow}>
+                <TouchableOpacity onPress={() => setShowStartPicker(true)} style={styles.timeButton}>
+                  <Text style={styles.timeButtonLabel}>START</Text>
+                  <Text style={styles.timeButtonValue}>{manualStart}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowEndPicker(true)} style={styles.timeButton}>
+                  <Text style={styles.timeButtonLabel}>END</Text>
+                  <Text style={styles.timeButtonValue}>{manualEnd}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* DEVICE MANAGEMENT */}
+        <Text style={styles.sectionTitle}>Device Management</Text>
+        <View style={styles.addDeviceContainer}>
+          <View style={styles.addDeviceHeader}>
+            <Text style={styles.addDeviceHeaderTitle}>New Device</Text>
+            <View style={styles.pinBadge}><Text style={styles.pinBadgeText}>ESP32 GPIO</Text></View>
+          </View>
+          
+          <View style={styles.addForm}>
+            <View style={styles.inputWrapper}>
+              <Text style={styles.inputLabel}>Name</Text>
+              <TextInput 
+                style={styles.modernInput} 
+                placeholder="e.g. Gate Light" 
+                value={newDeviceName} 
+                onChangeText={setNewDeviceName}
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+            <View style={[styles.inputWrapper, { flex: 0.4 }]}>
+              <Text style={styles.inputLabel}>Pin</Text>
+              <TextInput 
+                style={styles.modernInput} 
+                placeholder="25" 
+                value={newDevicePin} 
+                onChangeText={setNewDevicePin} 
+                keyboardType="numeric"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.modernAddButton} onPress={handleAdd}>
+            <Text style={styles.modernAddButtonText}>Add Device</Text>
+            <Text style={styles.plusIcon}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ✅ DEVICE LIST - ENHANCED */}
+        {devices && devices.length > 0 ? (
+          devices.map(dev => (
+            <View key={dev.id} style={styles.deviceItem}>
+              <View style={styles.deviceMainInfo}>
+                <View style={[
+                  styles.deviceIconCircle,
+                  { backgroundColor: dev.isActive ? '#DBEAFE' : '#F3F4F6' }
+                ]}>
+                  <Text style={{fontSize: 18}}>{dev.isActive ? '💡' : '⚫'}</Text>
+                </View>
+                <View>
+                  <Text style={styles.deviceName}>{dev.name}</Text>
+                  <Text style={styles.devicePin}>GPIO {dev.pin}</Text>
+                  {/* ✅ NEW: Show if device follows global state */}
+                  {dev.isActive && (
+                    <Text style={styles.deviceStatus}>
+                      {state ? '🟢 On' : '🔴 Off'}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <View style={styles.deviceActions}>
+                <TouchableOpacity 
+                  style={[
+                    styles.toggleBtn, 
+                    { backgroundColor: dev.isActive ? '#0EA5E9' : '#9CA3AF' }
+                  ]}
+                  onPress={() => toggleDeviceActive(dev.id, dev.isActive)}
+                >
+                  <Text style={styles.toggleBtnText}>
+                    {dev.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  onPress={() => deleteDevice(dev.id)} 
+                  style={styles.deleteIconButton}
+                >
+                  <Text style={{fontSize: 16}}>🗑️</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>💡</Text>
+            <Text style={styles.emptyStateText}>No devices configured</Text>
+            <Text style={styles.emptyStateSubtext}>Add your first light or device</Text>
           </View>
         )}
 
-        {/* Manual Mode */}
-        {mode === 'MANUAL' && (
-          <View style={styles.manualCard}>
-            <Text style={styles.cardTitle}>Manual Time</Text>
-
-            {/* Start Time */}
-            <TouchableOpacity
-              style={styles.manualInput}
-              onPress={() => setShowStartPicker(true)}
-            >
-              <Text>Start Time: {startTime}</Text>
-            </TouchableOpacity>
-            {showStartPicker && (
-              <DateTimePicker
-                value={new Date(`2023-01-01T${startTime}:00`)}
-                mode="time"
-                display="spinner"
-                onChange={onChangeStart}
-              />
-            )}
-
-            {/* End Time */}
-            <TouchableOpacity
-              style={styles.manualInput}
-              onPress={() => setShowEndPicker(true)}
-            >
-              <Text>End Time: {endTime}</Text>
-            </TouchableOpacity>
-            {showEndPicker && (
-              <DateTimePicker
-                value={new Date(`2023-01-01T${endTime}:00`)}
-                mode="time"
-                display="spinner"
-                onChange={onChangeEnd}
-              />
-            )}
-          </View>
-        )}
       </ScrollView>
 
-      {/* Footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveText}>Save Configuration</Text>
-        </TouchableOpacity>
-      </View>
+      {/* TIME PICKERS MODALS */}
+      {showStartPicker && (
+        <DateTimePicker 
+          value={new Date(`2000-01-01T${manualStart}:00`)} 
+          mode="time" 
+          is24Hour={true}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => {
+            setShowStartPicker(false);
+            if(d) updateManualSchedule(
+              `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`, 
+              manualEnd
+            );
+          }}
+        />
+      )}
+      {showEndPicker && (
+        <DateTimePicker 
+          value={new Date(`2000-01-01T${manualEnd}:00`)} 
+          mode="time" 
+          is24Hour={true}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(e, d) => {
+            setShowEndPicker(false);
+            if(d) updateManualSchedule(
+              manualStart, 
+              `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
 
-// ======= STYLES (inchangés) =======
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
-
-  topBar: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', textAlign: 'center' },
-
-  statusCard: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    alignItems: 'center',
+  header: { 
+    paddingTop: 50, 
+    paddingBottom: 20, 
+    backgroundColor: '#fff', 
+    alignItems: 'center', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#F3F4F6' 
+  },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  
+  statusCard: { 
+    backgroundColor: '#fff', 
+    padding: 20, 
+    borderRadius: 20, 
+    alignItems: 'center', 
+    margin: 16,
+    elevation: 3,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 10
+  },
+  statusLabel: { 
+    color: '#6B7280', 
+    fontSize: 13, 
+    fontWeight: '600', 
+    marginBottom: 8 
+  },
+  statusBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#F3F4F6', 
+    paddingHorizontal: 15, 
+    paddingVertical: 8, 
+    borderRadius: 30 
+  },
+  statusDot: { 
+    width: 8, 
+    height: 8, 
+    borderRadius: 4, 
+    marginRight: 10 
+  },
+  statusValue: { 
+    fontSize: 14, 
+    fontWeight: '800' 
+  },
+  powerIndicator: {
+    marginTop: 15,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 25,
     elevation: 2,
   },
-  statusTitle: { fontSize: 14, fontWeight: 'bold', color: '#6B7280', marginBottom: 8 },
-  statusRow: { flexDirection: 'row', alignItems: 'center' },
-  statusIcon: { fontSize: 26, marginRight: 10 },
-  statusText: { fontSize: 20, fontWeight: 'bold' },
-  statusOn: { color: '#16A34A' },
-  statusOff: { color: '#DC2626' },
+  powerIndicatorText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
+  },
 
-  modeSelector: { flexDirection: 'row', margin: 16, backgroundColor: '#f0f2f5', borderRadius: 12, overflow: 'hidden' },
-  modeButton: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  active: { backgroundColor: '#fff', elevation: 3 },
-  text: { color: '#60758a', fontWeight: '600' },
-  activeText: { color: '#111', fontWeight: '600' },
+  tabContainer: { 
+    flexDirection: 'row', 
+    backgroundColor: '#E5E7EB', 
+    borderRadius: 14, 
+    padding: 4, 
+    marginHorizontal: 16, 
+    marginBottom: 20 
+  },
+  tab: { 
+    flex: 1, 
+    paddingVertical: 12, 
+    alignItems: 'center', 
+    borderRadius: 11 
+  },
+  tabActive: { 
+    backgroundColor: '#fff', 
+    elevation: 2 
+  },
+  tabText: { 
+    fontWeight: '700', 
+    color: '#6B7280', 
+    fontSize: 13 
+  },
+  tabTextActive: { 
+    color: '#111827' 
+  },
 
-  main: { flex: 1 },
-  cardContainer: { padding: 16 },
-  card: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 12, backgroundColor: '#fff', borderWidth: 2, borderColor: 'transparent', marginBottom: 12 },
-  cardActive: { borderColor: '#3B82F6', backgroundColor: 'rgba(59,130,246,0.05)' },
-  cardIcon: { fontSize: 24, marginRight: 12 },
-  cardText: { flex: 1 },
-  cardTitle: { fontSize: 14, fontWeight: 'bold' },
-  cardSubtitle: { fontSize: 12, color: '#6B7280' },
-  cardStatus: { fontSize: 18 },
-  delayContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginLeft: 16 },
-  delayLabel: { fontWeight: 'bold', marginRight: 8 },
-  delayInput: { padding: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, width: 80, textAlign: 'center' },
-  manualCard: { padding: 16, borderRadius: 12, backgroundColor: '#fff', margin: 16 },
-  manualInput: { padding: 12, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, marginVertical: 8 },
-  footer: { padding: 16, borderTopWidth: 1, borderTopColor: '#E5E7EB', backgroundColor: '#fff' },
-  saveButton: { backgroundColor: '#0d7fff', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
-  saveText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  sectionCard: { 
+    backgroundColor: '#fff', 
+    borderRadius: 20, 
+    padding: 15, 
+    marginHorizontal: 16, 
+    marginBottom: 25 
+  },
+  cardInfoTitle: { 
+    fontSize: 15, 
+    fontWeight: '700', 
+    color: '#374151', 
+    marginBottom: 15, 
+    marginLeft: 5 
+  },
+  
+  card: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 16, 
+    borderRadius: 12, 
+    backgroundColor: '#fff', 
+    borderWidth: 2, 
+    borderColor: '#F3F4F6', 
+    marginBottom: 10 
+  },
+  cardActive: { 
+    borderColor: '#0EA5E9', 
+    backgroundColor: 'rgba(14,165,233,0.05)' 
+  },
+  cardIcon: { 
+    fontSize: 24, 
+    marginRight: 12 
+  },
+  cardTextContainer: { 
+    flex: 1 
+  },
+  cardTitle: { 
+    fontSize: 14, 
+    fontWeight: 'bold', 
+    color: '#111827' 
+  },
+  cardSubtitle: { 
+    fontSize: 12, 
+    color: '#6B7280' 
+  },
+  cardStatus: { 
+    fontSize: 18 
+  },
+
+  delayInputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginTop: 15, 
+    paddingHorizontal: 10 
+  },
+  delayLabel: { 
+    flex: 1, 
+    fontSize: 14, 
+    color: '#4B5563', 
+    fontWeight: 'bold' 
+  },
+  delayInput: { 
+    backgroundColor: '#F3F4F6', 
+    borderRadius: 8, 
+    padding: 8, 
+    width: 70, 
+    textAlign: 'center', 
+    fontWeight: 'bold', 
+    borderWidth: 1, 
+    borderColor: '#E5E7EB' 
+  },
+
+  timeRow: { 
+    flexDirection: 'row', 
+    gap: 15 
+  },
+  timeButton: { 
+    flex: 1, 
+    backgroundColor: '#F9FAFB', 
+    padding: 18, 
+    borderRadius: 15, 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: '#E5E7EB' 
+  },
+  timeButtonLabel: { 
+    fontSize: 10, 
+    color: '#9CA3AF', 
+    fontWeight: '800', 
+    marginBottom: 5 
+  },
+  timeButtonValue: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    color: '#111827' 
+  },
+
+  sectionTitle: { 
+    fontSize: 18, 
+    fontWeight: '800', 
+    color: '#111827', 
+    marginHorizontal: 16, 
+    marginBottom: 15 
+  },
+  
+  addDeviceContainer: {
+    backgroundColor: '#fff', 
+    borderRadius: 24, 
+    padding: 20, 
+    marginHorizontal: 16, 
+    marginBottom: 25,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 10 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 15, 
+    elevation: 4
+  },
+  addDeviceHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginBottom: 20 
+  },
+  addDeviceHeaderTitle: { 
+    fontSize: 13, 
+    fontWeight: '700', 
+    color: '#9CA3AF', 
+    textTransform: 'uppercase' 
+  },
+  pinBadge: { 
+    backgroundColor: '#DBEAFE', 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 8 
+  },
+  pinBadgeText: { 
+    color: '#0369A1', 
+    fontSize: 10, 
+    fontWeight: '800' 
+  },
+  addForm: { 
+    flexDirection: 'row', 
+    gap: 15, 
+    marginBottom: 20 
+  },
+  inputWrapper: { 
+    flex: 1 
+  },
+  inputLabel: { 
+    fontSize: 12, 
+    fontWeight: '700', 
+    color: '#4B5563', 
+    marginBottom: 8, 
+    marginLeft: 4 
+  },
+  modernInput: { 
+    backgroundColor: '#F9FAFB', 
+    borderRadius: 15, 
+    padding: 15, 
+    fontSize: 15, 
+    borderWidth: 1, 
+    borderColor: '#F3F4F6' 
+  },
+  modernAddButton: { 
+    backgroundColor: '#0EA5E9', 
+    height: 55, 
+    borderRadius: 18, 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    elevation: 4
+  },
+  modernAddButtonText: { 
+    color: '#fff', 
+    fontWeight: '800', 
+    fontSize: 16, 
+    marginRight: 10 
+  },
+  plusIcon: { 
+    color: '#fff', 
+    fontSize: 24, 
+    fontWeight: '300' 
+  },
+
+  deviceItem: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    backgroundColor: '#fff', 
+    padding: 15, 
+    borderRadius: 20, 
+    marginHorizontal: 16, 
+    marginBottom: 12, 
+    elevation: 1
+  },
+  deviceMainInfo: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    flex: 1
+  },
+  deviceIconCircle: { 
+    width: 45, 
+    height: 45, 
+    borderRadius: 22, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 15 
+  },
+  deviceName: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#111827' 
+  },
+  devicePin: { 
+    fontSize: 12, 
+    color: '#9CA3AF', 
+    fontWeight: '600' 
+  },
+  deviceStatus: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  deviceActions: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12 
+  },
+  toggleBtn: { 
+    paddingHorizontal: 12, 
+    paddingVertical: 8, 
+    borderRadius: 10, 
+    minWidth: 70, 
+    alignItems: 'center' 
+  },
+  toggleBtnText: { 
+    color: '#fff', 
+    fontSize: 10, 
+    fontWeight: '900' 
+  },
+  deleteIconButton: { 
+    padding: 5 
+  },
+  
+  emptyState: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 40,
+    marginHorizontal: 16,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  emptyIcon: { 
+    fontSize: 48, 
+    marginBottom: 15 
+  },
+  emptyStateText: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#6B7280', 
+    marginBottom: 5 
+  },
+  emptyStateSubtext: { 
+    fontSize: 13, 
+    color: '#9CA3AF', 
+    textAlign: 'center' 
+  },
 });

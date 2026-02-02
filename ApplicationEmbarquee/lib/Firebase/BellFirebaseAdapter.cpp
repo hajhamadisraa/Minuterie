@@ -1,21 +1,22 @@
 #include "BellFirebaseAdapter.h"
 
 // ==================== HELPER : Convertir nom de jour en index ====================
+// ⚠️ IMPORTANT: Alignement avec la convention ESP32 (0=Dimanche dans time.h)
 int BellFirebaseAdapter::dayNameToIndex(const String& dayName) {
-    if (dayName == "Sun") return 0;
-    if (dayName == "Mon") return 1;
-    if (dayName == "Tue") return 2;
-    if (dayName == "Wed") return 3;
-    if (dayName == "Thu") return 4;
-    if (dayName == "Fri") return 5;
-    if (dayName == "Sat") return 6;
+    if (dayName == "Sun") return 0;  // Dimanche
+    if (dayName == "Mon") return 1;  // Lundi
+    if (dayName == "Tue") return 2;  // Mardi
+    if (dayName == "Wed") return 3;  // Mercredi
+    if (dayName == "Thu") return 4;  // Jeudi
+    if (dayName == "Fri") return 5;  // Vendredi
+    if (dayName == "Sat") return 6;  // Samedi
     return -1;
 }
 
 // ==================== HELPER : Parser date ISO8601 ====================
 void BellFirebaseAdapter::parseISODate(const String& isoDate, int& jour, int& mois) {
     // Format: "2026-01-31T14:38:03.000Z"
-    // Extraire: année-MM-DD
+    // Extraire: YYYY-MM-DD
     
     if (isoDate.length() < 10) {
         jour = 1;
@@ -42,7 +43,7 @@ void BellFirebaseAdapter::loadNormalSchedules(const String& jsonStr, BellNormalS
     Serial.println("│  📥 CHARGEMENT SONNERIES NORMALES   │");
     Serial.println("└─────────────────────────────────────┘");
     
-    if (jsonStr.length() == 0 || jsonStr == "[]" || jsonStr == "null") {
+    if (jsonStr.length() == 0 || jsonStr == "[]" || jsonStr == "null" || jsonStr == "{}") {
         Serial.println("⚠ Aucune sonnerie normale trouvée");
         return;
     }
@@ -73,48 +74,64 @@ void BellFirebaseAdapter::loadNormalSchedules(const String& jsonStr, BellNormalS
             continue;
         }
         
-        BellNormalSchedule& schedule = schedules[count];
-        schedule.start.hour = bell["hour"] | 0;
-        schedule.start.minute = bell["minute"] | 0;
+        // Récupérer l'heure et la minute
+        int hour = bell["hour"] | 0;
+        int minute = bell["minute"] | 0;
         
         // Parser les jours
         JsonArray days = bell["days"].as<JsonArray>();
+        String label = bell["label"] | "Sans nom";
         
         if (days.size() == 0) {
-            // Aucun jour spécifié = tous les jours
-            schedule.dayOfWeek = -1;
-            Serial.printf("✅ [%02d:%02d] Tous les jours - %s\n", 
-                         schedule.start.hour, schedule.start.minute, 
-                         bell["label"].as<String>().c_str());
-        } else if (days.size() == 1) {
-            // Un seul jour
-            String dayName = days[0].as<String>();
-            schedule.dayOfWeek = dayNameToIndex(dayName);
-            Serial.printf("✅ [%02d:%02d] %s - %s\n", 
-                         schedule.start.hour, schedule.start.minute,
-                         dayName.c_str(),
-                         bell["label"].as<String>().c_str());
+            // ==================== CAS 1: AUCUN JOUR = TOUS LES JOURS ====================
+            BellNormalSchedule& schedule = schedules[count];
+            schedule.start.hour = hour;
+            schedule.start.minute = minute;
+            schedule.dayOfWeek = -1;  // -1 = tous les jours
+            
+            Serial.printf("✅ [%02d:%02d] Tous les jours - %s\n", hour, minute, label.c_str());
+            count++;
+            
         } else {
-            // Plusieurs jours = créer une sonnerie par jour
-            for (JsonVariant dayVariant : days) {
-                if (count >= 20) break;
+            // ==================== CAS 2: JOURS SPÉCIFIQUES ====================
+            // ✅ OPTIMISATION: Utiliser un masque de bits au lieu de créer plusieurs entrées
+            
+            // Compter les jours pour voir s'il faut optimiser
+            if (days.size() == 7) {
+                // Si tous les jours sont cochés, traiter comme "tous les jours"
+                BellNormalSchedule& schedule = schedules[count];
+                schedule.start.hour = hour;
+                schedule.start.minute = minute;
+                schedule.dayOfWeek = -1;
                 
-                String dayName = dayVariant.as<String>();
-                BellNormalSchedule& multiSchedule = schedules[count];
-                multiSchedule.start.hour = schedule.start.hour;
-                multiSchedule.start.minute = schedule.start.minute;
-                multiSchedule.dayOfWeek = dayNameToIndex(dayName);
-                
-                Serial.printf("✅ [%02d:%02d] %s - %s\n", 
-                             multiSchedule.start.hour, multiSchedule.start.minute,
-                             dayName.c_str(),
-                             bell["label"].as<String>().c_str());
+                Serial.printf("✅ [%02d:%02d] Tous les jours (7/7) - %s\n", hour, minute, label.c_str());
                 count++;
+            } else {
+                // Créer une entrée par jour (approche simple mais efficace)
+                for (JsonVariant dayVariant : days) {
+                    if (count >= 20) {
+                        Serial.println("⚠ Limite atteinte lors de l'expansion multi-jours");
+                        break;
+                    }
+                    
+                    String dayName = dayVariant.as<String>();
+                    int dayIndex = dayNameToIndex(dayName);
+                    
+                    if (dayIndex == -1) {
+                        Serial.printf("⚠ Jour invalide: %s\n", dayName.c_str());
+                        continue;
+                    }
+                    
+                    BellNormalSchedule& schedule = schedules[count];
+                    schedule.start.hour = hour;
+                    schedule.start.minute = minute;
+                    schedule.dayOfWeek = dayIndex;
+                    
+                    Serial.printf("✅ [%02d:%02d] %s - %s\n", hour, minute, dayName.c_str(), label.c_str());
+                    count++;
+                }
             }
-            continue; // Ne pas incrémenter count à la fin
         }
-        
-        count++;
     }
     
     Serial.printf("\n📊 Total: %d sonneries normales chargées\n\n", count);
@@ -128,7 +145,7 @@ void BellFirebaseAdapter::loadSpecialPeriods(const String& jsonStr, BellSpecialP
     Serial.println("│  📥 CHARGEMENT PÉRIODES SPÉCIALES   │");
     Serial.println("└─────────────────────────────────────┘");
     
-    if (jsonStr.length() == 0 || jsonStr == "[]" || jsonStr == "null") {
+    if (jsonStr.length() == 0 || jsonStr == "[]" || jsonStr == "null" || jsonStr == "{}") {
         Serial.println("⚠ Aucune période spéciale trouvée");
         return;
     }
@@ -166,7 +183,7 @@ void BellFirebaseAdapter::loadSpecialPeriods(const String& jsonStr, BellSpecialP
         bool hasComplexFormat = period.containsKey("dailySchedule");
         
         if (hasSimpleFormat) {
-            // ==================== FORMAT SIMPLE (VOS DONNÉES ACTUELLES) ====================
+            // ==================== FORMAT SIMPLE (DONNÉES ACTUELLES) ====================
             Serial.println("📌 Format SIMPLE détecté (hour/minute unique)");
             
             // Parser les dates ISO8601
@@ -180,17 +197,19 @@ void BellFirebaseAdapter::loadSpecialPeriods(const String& jsonStr, BellSpecialP
             int hour = period["hour"] | 0;
             int minute = period["minute"] | 0;
             
-            // Appliquer cette heure à TOUS les jours de la semaine
+            // ✅ CORRECTION: Appliquer cette heure à TOUS les jours de la semaine
             for (int day = 0; day < 7; day++) {
                 specialPeriod.dailySchedule[day].start.hour = hour;
                 specialPeriod.dailySchedule[day].start.minute = minute;
             }
             
+            String label = period["label"] | "Sans nom";
+            
             Serial.printf("✅ Période spéciale: %02d/%02d → %02d/%02d\n", 
                          specialPeriod.startDate.jour, specialPeriod.startDate.mois,
                          specialPeriod.endDate.jour, specialPeriod.endDate.mois);
             Serial.printf("   ⏰ Sonnerie à %02d:%02d TOUS LES JOURS\n", hour, minute);
-            Serial.printf("   🏷️  Label: %s\n", period["label"].as<String>().c_str());
+            Serial.printf("   🏷️  Label: %s\n", label.c_str());
             
         } else if (hasComplexFormat) {
             // ==================== FORMAT COMPLEXE (HORAIRE PAR JOUR) ====================
@@ -215,6 +234,12 @@ void BellFirebaseAdapter::loadSpecialPeriods(const String& jsonStr, BellSpecialP
                     JsonObject startTime = daySchedule["start"];
                     specialPeriod.dailySchedule[day].start.hour = startTime["hour"] | -1;
                     specialPeriod.dailySchedule[day].start.minute = startTime["minute"] | -1;
+                    
+                    if (specialPeriod.dailySchedule[day].start.hour >= 0) {
+                        Serial.printf("   📅 Jour %d: %02d:%02d\n", day, 
+                                     specialPeriod.dailySchedule[day].start.hour,
+                                     specialPeriod.dailySchedule[day].start.minute);
+                    }
                 } else {
                     // Pas de sonnerie ce jour-là
                     specialPeriod.dailySchedule[day].start.hour = -1;
@@ -228,7 +253,7 @@ void BellFirebaseAdapter::loadSpecialPeriods(const String& jsonStr, BellSpecialP
             Serial.println("   ⏰ Horaires par jour définis");
             
         } else {
-            Serial.println("❌ Format de période spéciale non reconnu");
+            Serial.println("❌ Format de période spéciale non reconnu - ignoré");
             continue;
         }
         

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import {
   Alert,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ export default function BellScreen() {
     normalBells,
     specialBells,
     nextBell,
+    lastTriggered,
     syncNormalBells,
     syncSpecialBells,
     deleteNormalBell,
@@ -167,6 +169,15 @@ export default function BellScreen() {
     setModalVisible(true);
   };
 
+  // ✅ Vérifier si une cloche est récemment déclenchée (dans les 2 dernières minutes)
+  const isBellRecentlyTriggered = () => {
+    if (!lastTriggered) return false;
+    const triggeredTime = new Date(lastTriggered.triggeredAt);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - triggeredTime.getTime()) / 1000 / 60;
+    return diffMinutes < 2;
+  };
+
   // Grouper normal bells par jour
   const normalBellsByDay: Record<string, NormalBell[]> = {};
   DAYS.forEach(day => {
@@ -175,268 +186,771 @@ export default function BellScreen() {
       .sort((a, b) => a.hour * 60 + a.minute - (b.hour * 60 + b.minute));
   });
 
-  // Next bell display
-  const nextBellStatus = nextBell
-    ? `⏭️ Next bell at ${nextBell.time} — ${nextBell.label}`
-    : '⚠️ No upcoming bell';
+  // Calculer le nombre total de cloches actives
+  const activeNormalBells = normalBells?.filter(b => b.enabled).length || 0;
+  const activeSpecialBells = specialBells?.filter(b => b.enabled).length || 0;
+  const totalActiveBells = activeNormalBells + activeSpecialBells;
 
   return (
     <View style={styles.container}>
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <View />
-        <Text style={styles.headerTitle}>Bell Settings</Text>
-        <View style={{ width: 24 }} />
+      {/* ✅ HEADER - Style unifié */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Bell Schedule</Text>
       </View>
 
-      {/* Mode Selector */}
-      <View style={styles.modeSelector}>
-        <TouchableOpacity style={[styles.modeButton, mode === 'normal' && styles.active]} onPress={() => setMode('normal')}>
-          <Text style={mode === 'normal' ? styles.activeText : styles.text}>Normal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.modeButton, mode === 'special' && styles.active]} onPress={() => setMode('special')}>
-          <Text style={mode === 'special' ? styles.activeText : styles.text}>Special</Text>
-        </TouchableOpacity>
-      </View>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        
+        {/* ✅ GLOBAL STATUS CARD */}
+        <View style={styles.statusCard}>
+          <Text style={styles.statusLabel}>Bell System Status</Text>
+          <View style={styles.statusBadge}>
+            <View style={[
+              styles.statusDot, 
+              { backgroundColor: isBellRecentlyTriggered() ? '#F59E0B' : (totalActiveBells > 0 ? '#16A34A' : '#6B7280') }
+            ]} />
+            <Text style={[
+              styles.statusValue, 
+              { color: isBellRecentlyTriggered() ? '#F59E0B' : (totalActiveBells > 0 ? '#16A34A' : '#6B7280') }
+            ]}>
+              {isBellRecentlyTriggered() ? 'RINGING' : (totalActiveBells > 0 ? 'READY' : 'NO BELLS ACTIVE')}
+            </Text>
+          </View>
+          
+          {/* ✅ Indicateur visuel supplémentaire */}
+          <View style={[
+            styles.powerIndicator,
+            { backgroundColor: isBellRecentlyTriggered() ? '#F59E0B' : (totalActiveBells > 0 ? '#16A34A' : '#6B7280') }
+          ]}>
+            <Text style={styles.powerIndicatorText}>
+              {isBellRecentlyTriggered() ? '🔔 ACTIVE' : (totalActiveBells > 0 ? `${totalActiveBells} SCHEDULED` : '⭕ INACTIVE')}
+            </Text>
+          </View>
+        </View>
 
-      {/* Next Bell */}
-      <View style={[styles.nextBellBox, !nextBell && styles.nextBellBoxWarning]}>
-        <Text style={[styles.nextBellText, !nextBell && styles.nextBellTextWarning]}>
-          {nextBellStatus}
+        {/* ✅ NEXT BELL INFO CARD */}
+        {nextBell && (
+          <View style={styles.nextBellCard}>
+            <View style={styles.nextBellHeader}>
+              <Text style={styles.nextBellIcon}>⏭️</Text>
+              <View style={styles.nextBellInfo}>
+                <Text style={styles.nextBellLabel}>Next Bell</Text>
+                <Text style={styles.nextBellTime}>{nextBell.time}</Text>
+              </View>
+            </View>
+            <Text style={styles.nextBellTitle}>{nextBell.label}</Text>
+            <View style={styles.nextBellTypeBadge}>
+              <Text style={styles.nextBellTypeText}>
+                {nextBell.type === 'normal' ? '📅 Normal Schedule' : '⭐ Special Event'}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ✅ MODE SELECTOR (TABS) - Style unifié */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity 
+            style={[styles.tab, mode === 'normal' && styles.tabActive]}
+            onPress={() => setMode('normal')}
+          >
+            <Text style={[styles.tabText, mode === 'normal' && styles.tabTextActive]}>NORMAL</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, mode === 'special' && styles.tabActive]}
+            onPress={() => setMode('special')}
+          >
+            <Text style={[styles.tabText, mode === 'special' && styles.tabTextActive]}>SPECIAL</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ✅ SECTION TITLE */}
+        <Text style={styles.sectionTitle}>
+          {mode === 'normal' ? 'Normal Bells Schedule' : 'Special Event Bells'}
         </Text>
-      </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
-        {/* NORMAL BELLS */}
-        {mode === 'normal' &&
-          DAYS.map(day => {
-            const dayBells = normalBellsByDay[day];
-            if (!dayBells || dayBells.length === 0) return null;
-            return (
-              <View key={day} style={styles.dayGroup}>
-                <Text style={styles.dayTitle}>{day}</Text>
-                {dayBells.map((bell, index) => (
-                  <View key={`${day}-${bell.id}-${index}`} style={styles.listItem}>
-                    <TouchableOpacity style={styles.listItemLeft} onPress={() => handleEdit(bell, 'normal')}>
-                      <View style={[styles.iconWrapper, !bell.enabled && styles.iconWrapperDisabled]}>
-                        <Text style={styles.icon}>⏰</Text>
-                      </View>
-                      <View>
-                        <Text style={[styles.listItemTime, !bell.enabled && styles.textDisabled]}>
-                          {formatTime(bell.hour, bell.minute)}
-                        </Text>
-                        <Text style={[styles.listItemLabel, !bell.enabled && styles.textDisabled]}>{bell.label}</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <View style={styles.listItemRight}>
-                      <TouchableOpacity onPress={() => handleDelete(bell.id, 'normal')}>
-                        <Text style={styles.deleteIcon}>🗑️</Text>
-                      </TouchableOpacity>
+        {/* ✅ NORMAL BELLS - Groupés par jour */}
+        {mode === 'normal' && (
+          <>
+            {DAYS.map(day => {
+              const dayBells = normalBellsByDay[day];
+              if (!dayBells || dayBells.length === 0) return null;
+              return (
+                <View key={day} style={styles.dayGroup}>
+                  <View style={styles.dayHeader}>
+                    <Text style={styles.dayTitle}>{day}</Text>
+                    <View style={styles.dayBadge}>
+                      <Text style={styles.dayBadgeText}>{dayBells.length} bells</Text>
                     </View>
                   </View>
-                ))}
-              </View>
-            );
-          })}
+                  
+                  {dayBells.map((bell, index) => (
+                    <View key={`${day}-${bell.id}-${index}`} style={styles.deviceItem}>
+                      <View style={styles.deviceMainInfo}>
+                        <View style={[
+                          styles.deviceIconCircle,
+                          { backgroundColor: bell.enabled ? '#FEF3C7' : '#F3F4F6' }
+                        ]}>
+                          <Text style={{fontSize: 18}}>{bell.enabled ? '🔔' : '🔕'}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.deviceName}>{bell.label}</Text>
+                          <Text style={styles.devicePin}>{formatTime(bell.hour, bell.minute)}</Text>
+                          <Text style={styles.deviceStatus}>
+                            {bell.days.join(', ')}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.deviceActions}>
+                        <TouchableOpacity 
+                          onPress={() => handleEdit(bell, 'normal')} 
+                          style={styles.editIconButton}
+                        >
+                          <Text style={{fontSize: 16}}>✏️</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          onPress={() => handleDelete(bell.id, 'normal')} 
+                          style={styles.deleteIconButton}
+                        >
+                          <Text style={{fontSize: 16}}>🗑️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
 
-        {/* SPECIAL BELLS */}
+            {normalBells.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🔔</Text>
+                <Text style={styles.emptyStateText}>No normal bells configured</Text>
+                <Text style={styles.emptyStateSubtext}>Add your first bell schedule</Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ✅ SPECIAL BELLS */}
         {mode === 'special' && (
           <>
-            <View style={styles.dateRow}>
-              <TouchableOpacity style={styles.dateBox} onPress={() => setShowStartPicker(true)}>
-                <Text style={styles.dateTitle}>Start Date</Text>
-                <Text style={styles.dateValue}>{formatDate(startDate)}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.dateBox} onPress={() => setShowEndPicker(true)}>
-                <Text style={styles.dateTitle}>End Date</Text>
-                <Text style={styles.dateValue}>{formatDate(endDate)}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {showStartPicker && (
-              <DateTimePicker
-                value={startDate}
-                mode="date"
-                display="spinner"
-                onChange={(e, d) => {
-                  setShowStartPicker(false);
-                  if (e.type === 'set' && d) {
-                    setStartDate(d);
-                    if (d > endDate) setEndDate(d);
-                  }
-                }}
-              />
-            )}
-            {showEndPicker && (
-              <DateTimePicker
-                value={endDate}
-                mode="date"
-                display="spinner"
-                onChange={(e, d) => {
-                  setShowEndPicker(false);
-                  if (e.type === 'set' && d) {
-                    if (d < startDate) {
-                      Alert.alert('Invalid Date', 'End Date cannot be before Start Date');
-                      return;
-                    }
-                    setEndDate(d);
-                  }
-                }}
-              />
-            )}
-
             {specialBells.map((bell, index) => (
-              <View key={`${bell.id}-${index}`} style={styles.listItem}>
-                <TouchableOpacity style={styles.listItemLeft} onPress={() => handleEdit(bell, 'special')}>
-                  <View style={[styles.iconWrapper, !bell.enabled && styles.iconWrapperDisabled]}>
-                    <Text style={styles.icon}>⏰</Text>
+              <View key={`${bell.id}-${index}`} style={styles.deviceItem}>
+                <View style={styles.deviceMainInfo}>
+                  <View style={[
+                    styles.deviceIconCircle,
+                    { backgroundColor: bell.enabled ? '#FEF3C7' : '#F3F4F6' }
+                  ]}>
+                    <Text style={{fontSize: 18}}>{bell.enabled ? '⭐' : '🔕'}</Text>
                   </View>
-                  <View>
-                    <Text style={[styles.listItemTime, !bell.enabled && styles.textDisabled]}>
-                      {formatTime(bell.hour, bell.minute)}
-                    </Text>
-                    <Text style={[styles.listItemLabel, !bell.enabled && styles.textDisabled]}>
-                      {bell.label} ({formatDate(new Date(bell.startDate))} - {formatDate(new Date(bell.endDate))})
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.deviceName}>{bell.label}</Text>
+                    <Text style={styles.devicePin}>{formatTime(bell.hour, bell.minute)}</Text>
+                    <Text style={styles.deviceStatus}>
+                      {formatDate(new Date(bell.startDate))} → {formatDate(new Date(bell.endDate))}
                     </Text>
                   </View>
-                </TouchableOpacity>
-                <View style={styles.listItemRight}>
-                  <TouchableOpacity onPress={() => handleDelete(bell.id, 'special')}>
-                    <Text style={styles.deleteIcon}>🗑️</Text>
+                </View>
+                <View style={styles.deviceActions}>
+                  <TouchableOpacity 
+                    onPress={() => handleEdit(bell, 'special')} 
+                    style={styles.editIconButton}
+                  >
+                    <Text style={{fontSize: 16}}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    onPress={() => handleDelete(bell.id, 'special')} 
+                    style={styles.deleteIconButton}
+                  >
+                    <Text style={{fontSize: 16}}>🗑️</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             ))}
+
+            {specialBells.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>⭐</Text>
+                <Text style={styles.emptyStateText}>No special bells configured</Text>
+                <Text style={styles.emptyStateSubtext}>Add bells for special events or holidays</Text>
+              </View>
+            )}
           </>
         )}
+
       </ScrollView>
 
-      {/* MODAL */}
+      {/* ✅ ADD BUTTON - Style moderne */}
+      <TouchableOpacity 
+        style={styles.addButton} 
+        onPress={() => { 
+          setEditingBell(null); 
+          setNewHour(8);
+          setNewMinute(0);
+          setNewLabel('');
+          setSelectedDays([]);
+          setModalVisible(true); 
+        }}
+      >
+        <Text style={styles.addButtonText}>+</Text>
+      </TouchableOpacity>
+
+      {/* ✅ MODAL - Style amélioré */}
       <Modal visible={modalVisible} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{editingBell ? 'Edit Bell' : 'Add Bell'}</Text>
+            <Text style={styles.modalTitle}>
+              {editingBell ? '✏️ Edit Bell' : '➕ Add New Bell'}
+            </Text>
 
-            <Text style={styles.inputLabel}>Time</Text>
-            <TouchableOpacity onPress={() => setShowTimePicker(true)}>
-              <Text style={[styles.input, { paddingVertical: 12 }]}>{formatTime(newHour, newMinute)}</Text>
-            </TouchableOpacity>
-            {showTimePicker && (
-              <DateTimePicker
-                value={new Date(1970, 0, 1, newHour, newMinute)}
-                mode="time"
-                display="spinner"
-                onChange={(e, d) => {
-                  setShowTimePicker(false);
-                  if (d) {
-                    setNewHour(d.getHours());
-                    setNewMinute(d.getMinutes());
-                  }
-                }}
-              />
-            )}
+            <View style={styles.modalForm}>
+              {/* Time Picker */}
+              <View style={styles.inputWrapper}>
+                <Text style={styles.inputLabel}>Time</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowTimePicker(true)}
+                  style={styles.timeInputButton}
+                >
+                  <Text style={styles.timeInputText}>🕐 {formatTime(newHour, newMinute)}</Text>
+                </TouchableOpacity>
+              </View>
 
-            <Text style={styles.inputLabel}>Label</Text>
-            <TextInput style={styles.input} value={newLabel} onChangeText={setNewLabel} />
+              {showTimePicker && (
+                <DateTimePicker
+                  value={new Date(1970, 0, 1, newHour, newMinute)}
+                  mode="time"
+                  is24Hour={true}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(e, d) => {
+                    setShowTimePicker(false);
+                    if (d) {
+                      setNewHour(d.getHours());
+                      setNewMinute(d.getMinutes());
+                    }
+                  }}
+                />
+              )}
 
-            {mode === 'normal' && (
-              <>
-                <Text style={[styles.inputLabel, { marginTop: 16 }]}>Repeat Days</Text>
-                <View style={styles.daysContainer}>
-                  {DAYS.map(day => (
-                    <TouchableOpacity
-                      key={day}
-                      style={[styles.dayButton, selectedDays.includes(day) && styles.dayButtonSelected]}
-                      onPress={() => toggleDay(day)}
-                    >
-                      <Text style={[styles.dayButtonText, selectedDays.includes(day) && styles.dayButtonTextSelected]}>
-                        {day}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+              {/* Label */}
+              <View style={styles.inputWrapper}>
+                <Text style={styles.inputLabel}>Label</Text>
+                <TextInput 
+                  style={styles.modernInput} 
+                  value={newLabel} 
+                  onChangeText={setNewLabel}
+                  placeholder="e.g. Morning Bell"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              {/* Normal Mode: Days */}
+              {mode === 'normal' && (
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.inputLabel}>Repeat Days</Text>
+                  <View style={styles.daysContainer}>
+                    {DAYS.map(day => (
+                      <TouchableOpacity
+                        key={day}
+                        style={[styles.dayButton, selectedDays.includes(day) && styles.dayButtonSelected]}
+                        onPress={() => toggleDay(day)}
+                      >
+                        <Text style={[
+                          styles.dayButtonText, 
+                          selectedDays.includes(day) && styles.dayButtonTextSelected
+                        ]}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                 </View>
-              </>
-            )}
+              )}
 
+              {/* Special Mode: Date Range */}
+              {mode === 'special' && (
+                <>
+                  <View style={styles.dateRangeRow}>
+                    <View style={styles.dateInputWrapper}>
+                      <Text style={styles.inputLabel}>Start Date</Text>
+                      <TouchableOpacity 
+                        onPress={() => setShowStartPicker(true)}
+                        style={styles.dateInputButton}
+                      >
+                        <Text style={styles.dateInputText}>📅 {formatDate(startDate)}</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.dateInputWrapper}>
+                      <Text style={styles.inputLabel}>End Date</Text>
+                      <TouchableOpacity 
+                        onPress={() => setShowEndPicker(true)}
+                        style={styles.dateInputButton}
+                      >
+                        <Text style={styles.dateInputText}>📅 {formatDate(endDate)}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {showStartPicker && (
+                    <DateTimePicker
+                      value={startDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(e, d) => {
+                        setShowStartPicker(false);
+                        if (e.type === 'set' && d) {
+                          setStartDate(d);
+                          if (d > endDate) setEndDate(d);
+                        }
+                      }}
+                    />
+                  )}
+                  {showEndPicker && (
+                    <DateTimePicker
+                      value={endDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(e, d) => {
+                        setShowEndPicker(false);
+                        if (e.type === 'set' && d) {
+                          if (d < startDate) {
+                            Alert.alert('Invalid Date', 'End Date cannot be before Start Date');
+                            return;
+                          }
+                          setEndDate(d);
+                        }
+                      }}
+                    />
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Modal Buttons */}
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.cancelButton} onPress={resetModal}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmButton} onPress={handleSave}>
-                <Text style={styles.confirmButtonText}>Save</Text>
+                <Text style={styles.confirmButtonText}>
+                  {editingBell ? 'Update' : 'Add Bell'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-
-      {/* ADD BUTTON */}
-      <TouchableOpacity style={styles.addButton} onPress={() => { setEditingBell(null); setModalVisible(true); }}>
-        <Text style={styles.addButtonText}>＋</Text>
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container:{flex:1,backgroundColor:'#F9FAFB'},
-  topBar:{padding:16,borderBottomWidth:1,borderBottomColor:'#E5E7EB',flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
-  headerTitle:{fontSize:18,fontWeight:'bold',textAlign:'center',flex:1},
-  modeSelector:{flexDirection:'row',margin:16,backgroundColor:'#f0f2f5',borderRadius:12,overflow:'hidden'},
-  modeButton:{flex:1,paddingVertical:10,alignItems:'center'},
-  active:{backgroundColor:'#fff',elevation:3},
-  text:{color:'#60758a',fontWeight:'600'},
-  activeText:{color:'#111',fontWeight:'600'},
-  dayGroup:{marginTop:12},
-  dayTitle:{fontSize:16,fontWeight:'bold',color:'#0d7fff',marginLeft:16,marginBottom:8},
-  listItem:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',padding:14,marginBottom:12,marginHorizontal:16,backgroundColor:'#FFFFFF',borderRadius:12,borderWidth:1,borderColor:'#E5E7EB',elevation:2},
-  listItemLeft:{flexDirection:'row',alignItems:'center',flex:1},
-  listItemRight:{flexDirection:'row',alignItems:'center',gap:12},
-  iconWrapper:{width:44,height:44,borderRadius:12,backgroundColor:'rgba(13,127,255,0.1)',justifyContent:'center',alignItems:'center',marginRight:12},
-  iconWrapperDisabled:{backgroundColor:'rgba(0,0,0,0.05)'},
-  icon:{fontSize:20,color:'#0d7fff'},
-  listItemTime:{fontSize:14,fontWeight:'600',color:'#111'},
-  listItemLabel:{fontSize:10,color:'#60758a',textTransform:'uppercase'},
-  textDisabled:{opacity:0.4},
-  deleteIcon:{fontSize:18},
-  dateRow:{flexDirection:'row',gap:12,marginBottom:16,marginHorizontal:16},
-  dateBox:{flex:1,borderWidth:1,borderColor:'#ddd',borderRadius:12,padding:12},
-  dateTitle:{fontSize:12,color:'#60758a',fontWeight:'600'},
-  dateValue:{fontSize:14,fontWeight:'bold',color:'#111'},
-  modalOverlay:{flex:1,backgroundColor:'rgba(0,0,0,0.5)',justifyContent:'center',alignItems:'center'},
-  modalContent:{width:'85%',backgroundColor:'#fff',borderRadius:16,padding:24},
-  modalTitle:{fontSize:20,fontWeight:'bold',marginBottom:20,textAlign:'center'},
-  inputLabel:{fontSize:14,fontWeight:'600',marginBottom:6},
-  input:{borderWidth:1,borderColor:'#ddd',borderRadius:8,padding:12,marginBottom:12},
-  daysContainer:{flexDirection:'row',flexWrap:'wrap',gap:8},
-  dayButton:{paddingVertical:6,paddingHorizontal:12,borderWidth:1,borderColor:'#ddd',borderRadius:8},
-  dayButtonSelected:{backgroundColor:'#0d7fff',borderColor:'#0d7fff'},
-  dayButtonText:{fontSize:12,fontWeight:'600',color:'#111'},
-  dayButtonTextSelected:{color:'#fff'},
-  modalButtons:{flexDirection:'row',gap:12,marginTop:16},
-  cancelButton:{flex:1,backgroundColor:'#f0f2f5',paddingVertical:12,borderRadius:8,alignItems:'center'},
-  cancelButtonText:{fontWeight:'600',color:'#60758a'},
-  confirmButton:{flex:1,backgroundColor:'#0d7fff',paddingVertical:12,borderRadius:8,alignItems:'center'},
-  confirmButtonText:{fontWeight:'600',color:'#fff'},
-  nextBellBox: {
-    padding: 12,
-    marginHorizontal: 16,
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  
+  header: { 
+    paddingTop: 50, 
+    paddingBottom: 20, 
+    backgroundColor: '#fff', 
+    alignItems: 'center', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#F3F4F6',
+    elevation: 2,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 3
+  },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#111827' },
+  
+  statusCard: { 
+    backgroundColor: '#fff', 
+    padding: 20, 
+    borderRadius: 20, 
+    alignItems: 'center', 
+    marginBottom: 16,
+    elevation: 3,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.1, 
+    shadowRadius: 10
+  },
+  statusLabel: { 
+    color: '#6B7280', 
+    fontSize: 13, 
+    fontWeight: '600', 
+    marginBottom: 8 
+  },
+  statusBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#F3F4F6', 
+    paddingHorizontal: 15, 
+    paddingVertical: 8, 
+    borderRadius: 30 
+  },
+  statusDot: { 
+    width: 8, 
+    height: 8, 
+    borderRadius: 4, 
+    marginRight: 10 
+  },
+  statusValue: { 
+    fontSize: 14, 
+    fontWeight: '800' 
+  },
+  powerIndicator: {
+    marginTop: 15,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 25,
+    elevation: 2,
+  },
+  powerIndicatorText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  nextBellCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  nextBellHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 12,
-    backgroundColor: '#e0f0ff',
+  },
+  nextBellIcon: {
+    fontSize: 32,
+    marginRight: 12,
+  },
+  nextBellInfo: {
+    flex: 1,
+  },
+  nextBellLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  nextBellTime: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  nextBellTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  nextBellTypeBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  nextBellTypeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+
+  tabContainer: { 
+    flexDirection: 'row', 
+    backgroundColor: '#E5E7EB', 
+    borderRadius: 14, 
+    padding: 4, 
+    marginBottom: 20 
+  },
+  tab: { 
+    flex: 1, 
+    paddingVertical: 12, 
+    alignItems: 'center', 
+    borderRadius: 11 
+  },
+  tabActive: { 
+    backgroundColor: '#fff', 
+    elevation: 2 
+  },
+  tabText: { 
+    fontWeight: '700', 
+    color: '#6B7280', 
+    fontSize: 13 
+  },
+  tabTextActive: { 
+    color: '#111827' 
+  },
+
+  sectionTitle: { 
+    fontSize: 18, 
+    fontWeight: '800', 
+    color: '#111827', 
+    marginBottom: 15 
+  },
+
+  dayGroup: {
+    marginBottom: 20,
+  },
+  dayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  dayTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0EA5E9',
+  },
+  dayBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  dayBadgeText: {
+    color: '#0369A1',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  deviceItem: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    backgroundColor: '#fff', 
+    padding: 15, 
+    borderRadius: 20, 
+    marginBottom: 12, 
+    elevation: 1
+  },
+  deviceMainInfo: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    flex: 1
+  },
+  deviceIconCircle: { 
+    width: 45, 
+    height: 45, 
+    borderRadius: 22, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 15 
+  },
+  deviceName: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#111827' 
+  },
+  devicePin: { 
+    fontSize: 12, 
+    color: '#9CA3AF', 
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  deviceStatus: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  deviceActions: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12 
+  },
+  editIconButton: { 
+    padding: 5 
+  },
+  deleteIconButton: { 
+    padding: 5 
+  },
+  
+  emptyState: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 40,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  emptyIcon: { 
+    fontSize: 48, 
+    marginBottom: 15 
+  },
+  emptyStateText: { 
+    fontSize: 16, 
+    fontWeight: '700', 
+    color: '#6B7280', 
+    marginBottom: 5 
+  },
+  emptyStateSubtext: { 
+    fontSize: 13, 
+    color: '#9CA3AF', 
+    textAlign: 'center' 
+  },
+
+  addButton: {
+    position: 'absolute',
+    bottom: 32,
+    right: 32,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#0EA5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  addButtonText: {
+    fontSize: 36,
+    color: '#fff',
+    fontWeight: '300',
+    lineHeight: 36,
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  nextBellBoxWarning: {
-    backgroundColor: '#fff3cd',
+  modalContent: {
+    width: '90%',
+    maxWidth: 500,
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 24,
+    maxHeight: '85%',
   },
-  nextBellText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0d7fff',
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 24,
+    textAlign: 'center',
+    color: '#111827',
   },
-  nextBellTextWarning: {
-    color: '#856404',
+  modalForm: {
+    gap: 16,
   },
-  addButton:{position:'absolute',bottom:32,right:32,width:56,height:56,borderRadius:28,backgroundColor:'#0d7fff',justifyContent:'center',alignItems:'center',elevation:5},
-  addButtonText:{fontSize:32,color:'#fff',lineHeight:32}
+  inputWrapper: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4B5563',
+    marginLeft: 4,
+  },
+  modernInput: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 15,
+    padding: 15,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    color: '#111827',
+  },
+  timeInputButton: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 15,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  timeInputText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  daysContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dayButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+  },
+  dayButtonSelected: {
+    backgroundColor: '#0EA5E9',
+    borderColor: '#0EA5E9',
+  },
+  dayButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  dayButtonTextSelected: {
+    color: '#fff',
+  },
+  dateRangeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dateInputWrapper: {
+    flex: 1,
+    gap: 8,
+  },
+  dateInputButton: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 15,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  dateInputText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    paddingVertical: 14,
+    borderRadius: 15,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontWeight: '700',
+    fontSize: 15,
+    color: '#6B7280',
+  },
+  confirmButton: {
+    flex: 1,
+    backgroundColor: '#0EA5E9',
+    paddingVertical: 14,
+    borderRadius: 15,
+    alignItems: 'center',
+    elevation: 2,
+  },
+  confirmButtonText: {
+    fontWeight: '800',
+    fontSize: 15,
+    color: '#fff',
+  },
 });

@@ -34,6 +34,13 @@ export type NextBell = {
 };
 
 
+export type BellTrigger = {
+  bellId: string;
+  triggeredAt: string; // ISO timestamp
+  type: 'normal' | 'special';
+};
+
+
 /* ===================== HOOK ===================== */
 
 
@@ -41,6 +48,7 @@ export function useBell() {
   const [normalBells, setNormalBells] = useState<NormalBell[]>([]);
   const [specialBells, setSpecialBells] = useState<SpecialBell[]>([]);
   const [nextBell, setNextBell] = useState<NextBell | null>(null);
+  const [lastTriggered, setLastTriggered] = useState<BellTrigger | null>(null);
 
 
   /* 🔹 READ NORMAL BELLS */
@@ -75,6 +83,20 @@ export function useBell() {
         ...data[id],
       }));
       setSpecialBells(list);
+    });
+  }, []);
+
+
+  /* 🔹 READ LAST TRIGGERED BELL (écouté en temps réel) */
+  useEffect(() => {
+    const triggerRef = ref(database, 'bells/lastTriggered');
+    return onValue(triggerRef, snap => {
+      if (!snap.exists()) {
+        setLastTriggered(null);
+        return;
+      }
+      const data = snap.val();
+      setLastTriggered(data);
     });
   }, []);
 
@@ -133,63 +155,103 @@ export function useBell() {
 
   /* 🔹 CALCULATE NEXT BELL */
   useEffect(() => {
-    const now = new Date();
+    const DAYS_MAP = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+    const calculateNext = () => {
+      const now = new Date();
+      const currentDay = DAYS_MAP[now.getDay()];
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-    // 🔹 Fonction utilitaire pour obtenir prochaine alarme la plus proche
-    const getNext = () => {
-      const upcomingNormals = normalBells
+      let candidates: Array<{ time: Date; label: string; type: 'normal' | 'special' }> = [];
+
+      // 🔹 NORMAL BELLS - Chercher aujourd'hui et les 7 prochains jours
+      normalBells
         .filter(b => b.enabled)
-        .map(b => {
-          const t = new Date();
-          t.setHours(b.hour, b.minute, 0, 0);
-          return { ...b, time: t };
-        })
-        .filter(b => b.time > now)
-        .sort((a, b) => a.time.getTime() - b.time.getTime());
+        .forEach(bell => {
+          for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
+            const checkDate = new Date(now);
+            checkDate.setDate(checkDate.getDate() + dayOffset);
+            const checkDay = DAYS_MAP[checkDate.getDay()];
 
+            if (bell.days.includes(checkDay)) {
+              const bellTime = new Date(checkDate);
+              bellTime.setHours(bell.hour, bell.minute, 0, 0);
 
-      const upcomingSpecials = specialBells
+              // Si c'est aujourd'hui, vérifier que l'heure n'est pas passée
+              if (dayOffset === 0 && bell.hour * 60 + bell.minute <= currentMinutes) {
+                continue;
+              }
+
+              candidates.push({
+                time: bellTime,
+                label: bell.label,
+                type: 'normal',
+              });
+              break; // On prend la première occurrence
+            }
+          }
+        });
+
+      // 🔹 SPECIAL BELLS - Vérifier si dans la période et heure future
+      specialBells
         .filter(b => b.enabled)
-        .map(b => ({ ...b, time: new Date(b.startDate) }))
-        .filter(b => b.time > now)
-        .sort((a, b) => a.time.getTime() - b.time.getTime());
+        .forEach(bell => {
+          const start = new Date(bell.startDate);
+          const end = new Date(bell.endDate);
+          
+          // Chercher tous les jours dans la période
+          let checkDate = new Date(Math.max(now.getTime(), start.getTime()));
+          checkDate.setHours(0, 0, 0, 0);
+          
+          while (checkDate <= end) {
+            const bellTime = new Date(checkDate);
+            bellTime.setHours(bell.hour, bell.minute, 0, 0);
+            
+            // Si c'est dans le futur
+            if (bellTime > now) {
+              candidates.push({
+                time: bellTime,
+                label: bell.label,
+                type: 'special',
+              });
+              break; // On prend la première occurrence
+            }
+            
+            checkDate.setDate(checkDate.getDate() + 1);
+          }
+        });
 
-
-      let next: NextBell | null = null;
-
-
-      const nextNormal = upcomingNormals[0];
-      const nextSpecial = upcomingSpecials[0];
-
-
-      if (nextNormal && (!nextSpecial || nextNormal.time < nextSpecial.time)) {
-        next = {
-          label: nextNormal.label,
-          time: `${String(nextNormal.hour).padStart(2, '0')}:${String(nextNormal.minute).padStart(2, '0')}`,
-          type: 'normal',
-        };
-      } else if (nextSpecial) {
-        next = {
-          label: nextSpecial.label,
-          time: `${String(nextSpecial.hour).padStart(2, '0')}:${String(nextSpecial.minute).padStart(2, '0')}`,
-          type: 'special',
-        };
+      // Trier et prendre la plus proche
+      if (candidates.length === 0) {
+        return null;
       }
 
+      candidates.sort((a, b) => a.time.getTime() - b.time.getTime());
+      const next = candidates[0];
 
-      return next;
+      return {
+        label: next.label,
+        time: `${String(next.time.getHours()).padStart(2, '0')}:${String(next.time.getMinutes()).padStart(2, '0')}`,
+        type: next.type,
+      };
     };
 
+    setNextBell(calculateNext());
 
-    setNextBell(getNext());
-  }, [normalBells, specialBells]);
+    // 🔹 Rafraîchir toutes les 5 secondes pour une mise à jour quasi-instantanée
+    const interval = setInterval(() => {
+      setNextBell(calculateNext());
+    }, 5000); // Toutes les 5 secondes (au lieu de 60)
+
+    return () => clearInterval(interval);
+  }, [normalBells, specialBells, lastTriggered]); // 🔹 Ajout de lastTriggered pour recalculer automatiquement
 
 
   return {
     normalBells,
     specialBells,
     nextBell,
+    lastTriggered, // 🔹 Exposer pour affichage si besoin
     syncNormalBells,
     syncSpecialBells,
     addNormalBell,
@@ -198,8 +260,3 @@ export function useBell() {
     deleteSpecialBell,
   };
 }
-
-
-
-
-
